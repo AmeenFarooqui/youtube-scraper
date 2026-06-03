@@ -227,6 +227,15 @@ Examples:
         dest="no_print",
         help="Suppress terminal summary output (only save to file)",
     )
+    output_group.add_argument(
+        "--urls-only",
+        action="store_true",
+        dest="urls_only",
+        help=(
+            "Print only the YouTube URLs, one per line. "
+            "Ideal for piping into 'notebooklm source add' or a batch file."
+        ),
+    )
 
     # ── Subtitle options ──────────────────────────────────────────────────────
     subtitle_group = parser.add_argument_group("Subtitles")
@@ -624,11 +633,51 @@ def _print_pipeline_results(data: dict) -> None:
 # Decides how to format and where to send the result.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _extract_urls(data: dict | list) -> list[str]:
+    """Extract all YouTube URLs from any result shape."""
+    urls = []
+    if isinstance(data, list):
+        for item in data:
+            u = item.get("webpage_url") or item.get("url")
+            if u:
+                urls.append(u)
+    elif isinstance(data, dict):
+        _ext = data.get("_extractor", "")
+        if _ext == "SearchExtractor":
+            for r in data.get("results", []):
+                u = r.get("url")
+                if u:
+                    urls.append(u)
+        elif _ext == "PipelineExtractor":
+            for v in data.get("videos", []):
+                u = v.get("webpage_url") or v.get("url")
+                if u:
+                    urls.append(u)
+        elif "queries" in data:
+            for q in data.get("queries", []):
+                for item in q.get("videos") or q.get("results") or []:
+                    u = item.get("webpage_url") or item.get("url")
+                    if u:
+                        urls.append(u)
+        elif "playlist_id" in data:
+            for v in data.get("entries", []):
+                if v:
+                    u = v.get("webpage_url") or v.get("url")
+                    if u:
+                        urls.append(u)
+        else:
+            u = data.get("webpage_url") or data.get("url")
+            if u:
+                urls.append(u)
+    return urls
+
+
 def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenerator) -> None:
     """
     Format and output the result.
 
     Output routing logic:
+      --urls-only → one URL per line (for NotebookLM / batch piping)
       --report    → Markdown formatter
       --csv       → CSV formatter
       (default)   → JSON formatter
@@ -637,6 +686,18 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     If not: print to stdout (JSON) or terminal (Markdown)
     """
     output_path = Path(args.output) if args.output else None
+
+    # ── URLs-only mode: one URL per line, nothing else ────────────────────────
+    if getattr(args, "urls_only", False):
+        urls = _extract_urls(data)
+        output = "\n".join(urls)
+        if output_path:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(output + "\n", encoding="utf-8")
+            print(f"Saved {len(urls)} URLs to {output_path}")
+        else:
+            print(output)
+        return
 
     # Detect result type from _extractor tag or structure
     _ext         = data.get("_extractor", "") if isinstance(data, dict) else ""

@@ -6,6 +6,8 @@ A production-grade YouTube metadata extractor and scraper built with Python and 
 
 ## What This Does
 
+- **Searches YouTube by keyword** and returns ranked results with full metadata
+- **Feeds YouTube URLs into NotebookLM** via `--urls-only` — the primary research workflow
 - Extracts **deep metadata** from any public YouTube video: stats, formats, subtitles, chapters, heatmap data, channel info, and more
 - Analyzes **entire playlists** with summary statistics
 - Processes **batches of URLs** from a text file, concurrently
@@ -19,12 +21,15 @@ A production-grade YouTube metadata extractor and scraper built with Python and 
 
 | Feature | Details |
 |---------|---------|
+| **YouTube search** | Search by keyword, filter by views/duration/age, get ranked results |
+| **NotebookLM pipeline** | `--urls-only` outputs clean URLs for piping into `notebooklm source add` |
+| **Pipeline mode** | Search → filter → fetch full metadata for top N results |
 | Single video metadata | 30+ fields including stats, formats, subtitles |
 | Playlist analysis | Total duration, avg length, view totals, date range |
 | Batch processing | Concurrent, fault-tolerant, continues on failures |
 | Subtitle extraction | Lists available languages, optionally downloads .srt/.vtt |
 | Optional downloads | Video (MP4/MKV/WebM) or audio (MP3/M4A/WAV/FLAC) |
-| Output formats | JSON, CSV, Markdown report |
+| Output formats | JSON, CSV, Markdown report, URLs-only |
 | Error handling | Classifies: deleted, private, age-restricted, geo-blocked |
 | Terminal UI | Rich colored output with tables and panels |
 
@@ -102,6 +107,72 @@ All commands run from the `scripts/` directory, or pass the full path:
 cd ~/.claude/skills/youtube-scraper/scripts
 ```
 
+### Search YouTube by keyword
+
+```bash
+python youtube_scraper.py --search "claude code tutorial" --search-limit 10
+```
+
+### Search with filters (recent, high-engagement)
+
+```bash
+python youtube_scraper.py \
+  --search "agentic AI" \
+  --search-limit 20 \
+  --filter-min-views 5000 \
+  --filter-min-duration 300 \
+  --filter-max-age-days 90
+```
+
+### Search → get URLs only (for NotebookLM)
+
+```bash
+python youtube_scraper.py \
+  --search "autoresearch karpathy" \
+  --search-limit 15 \
+  --urls-only \
+  --output urls.txt
+```
+
+This outputs one YouTube URL per line — nothing else. Pipe directly into `notebooklm source add`.
+
+### NotebookLM Research Pipeline
+
+The recommended end-to-end workflow:
+
+```bash
+# Step 1: search YouTube, save clean URL list
+python youtube_scraper.py --search "topic" --search-limit 15 --urls-only --output urls.txt
+
+# Step 2: create a NotebookLM notebook
+notebooklm create "Topic Research" --json   # note the notebook ID
+
+# Step 3: add each URL as a source (NotebookLM indexes transcripts itself)
+notebooklm source add "https://www.youtube.com/watch?v=..." --notebook NOTEBOOK_ID
+
+# Step 4: ask for analysis — all computation offloaded to Google (zero Claude tokens)
+notebooklm ask "What are the top insights?" --notebook NOTEBOOK_ID
+notebooklm generate infographic "Summary" --notebook NOTEBOOK_ID --orientation portrait
+```
+
+> **Never use `--subtitles` to feed NotebookLM.** Pass the YouTube URL directly to
+> `notebooklm source add` — NotebookLM fetches and indexes the transcript itself.
+
+### Pipeline mode (search → filter → full metadata)
+
+```bash
+python youtube_scraper.py \
+  --search "claude code" \
+  --search-limit 20 \
+  --pipeline \
+  --filter-min-views 10000 \
+  --pipeline-top 5 \
+  --urls-only
+```
+
+`--pipeline` fetches full metadata for the top results after filtering, so you can inspect
+quality before sending to NotebookLM.
+
 ### Single video (default JSON output)
 
 ```bash
@@ -137,6 +208,19 @@ Fast mode (default) — gets title/duration/views per video without loading each
 For full per-video metadata (slow):
 ```bash
 python youtube_scraper.py --playlist "URL" --full-playlist
+```
+
+### Get only URLs from any mode
+
+```bash
+# From search:
+python youtube_scraper.py --search "topic" --search-limit 10 --urls-only
+
+# From batch:
+python youtube_scraper.py --batch existing_urls.txt --urls-only
+
+# From playlist:
+python youtube_scraper.py --playlist "https://www.youtube.com/playlist?list=PL..." --urls-only
 ```
 
 ### Batch process from a file
@@ -393,22 +477,24 @@ YouTube's internal APIs change frequently. Keeping yt-dlp up to date is importan
 
 Suggested next improvements:
 
-| Feature | Complexity | Value |
-|---------|-----------|-------|
-| Channel extractor | Medium | High |
-| SQLite storage | Medium | High |
-| Transcript text extraction | Low | High |
-| Keyword/topic extraction (NLP) | Medium | Medium |
-| Sentiment analysis on comments | High | Medium |
-| FastAPI REST API wrapper | Medium | High |
-| Streamlit web UI | Medium | Medium |
-| HTML report output | Low | Medium |
-| YouTube search integration | High | High |
-| Cookie/auth support (optional) | Medium | Medium |
-| AI-powered video summarization | High | High |
-| Export to Postgres/Supabase | Medium | Medium |
-| Scheduled scraping (cron) | Low | Medium |
-| Duplicate URL detection | Low | Low |
+| Feature | Status | Complexity | Value |
+|---------|--------|-----------|-------|
+| YouTube search integration | ✅ Done | — | — |
+| NotebookLM pipeline (`--urls-only`) | ✅ Done | — | — |
+| Pipeline mode with filters | ✅ Done | — | — |
+| Channel extractor | Pending | Medium | High |
+| SQLite storage | Pending | Medium | High |
+| Transcript text extraction | Pending | Low | High |
+| Keyword/topic extraction (NLP) | Pending | Medium | Medium |
+| Sentiment analysis on comments | Pending | High | Medium |
+| FastAPI REST API wrapper | Pending | Medium | High |
+| Streamlit web UI | Pending | Medium | Medium |
+| HTML report output | Pending | Low | Medium |
+| Cookie/auth support (optional) | Pending | Medium | Medium |
+| AI-powered video summarization | Pending | High | High |
+| Export to Postgres/Supabase | Pending | Medium | Medium |
+| Scheduled scraping (cron) | Pending | Low | Medium |
+| Duplicate URL detection | Pending | Low | Low |
 
 ---
 
