@@ -30,27 +30,7 @@ Downloading is NEVER the default.
 
 ## Skill Location
 
-All scripts live in the `scripts/` directory next to this SKILL.md file:
-
-```
-~/.claude/skills/youtube-scraper/
-├── SKILL.md
-├── README.md
-├── requirements.txt
-└── scripts/
-    ├── youtube_scraper.py      # Main CLI entry point
-    ├── config.py
-    ├── extractor/
-    │   ├── video_extractor.py
-    │   ├── playlist_extractor.py
-    │   ├── subtitle_extractor.py
-    │   ├── search_extractor.py
-    │   ├── pipeline_extractor.py
-    │   └── downloader.py
-    ├── formatter/
-    ├── reports/
-    └── utils/
-```
+The entry point is `scripts/youtube_scraper.py` in the skill directory. That is the only file you need to invoke.
 
 ## Setup (do this once per machine)
 
@@ -58,6 +38,14 @@ All scripts live in the `scripts/` directory next to this SKILL.md file:
 pip install yt-dlp
 pip install -r ~/.claude/skills/youtube-scraper/requirements.txt
 ```
+
+---
+
+## Autonomy Rule
+
+**When the user describes a research pipeline (search → NotebookLM → analysis), run ALL steps without stopping to ask for confirmation.**
+
+Do NOT stop after search to ask "should I add these to NotebookLM?" or "which URLs do you want?" — proceed through the full 4-step pipeline. The user said research; that means the complete workflow. Only pause if a step fails with an error.
 
 ---
 

@@ -8,35 +8,32 @@ This is the file you run directly. It parses command-line arguments,
 routes to the appropriate extractor, and handles output.
 
 USAGE EXAMPLES:
+  # Search YouTube (primary research workflow)
+  python youtube_scraper.py --search "claude code tutorial" --search-limit 10
+
+  # Search → get clean URL list (pipe into notebooklm source add)
+  python youtube_scraper.py --search "autoresearch" --search-limit 15 --urls-only --output urls.txt
+
+  # Search with filters + full metadata for top results
+  python youtube_scraper.py --search "topic" --pipeline --filter-min-views 5000 --pipeline-top 5
+
   # Single video metadata
   python youtube_scraper.py --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
   # Save as JSON
   python youtube_scraper.py --url "URL" --output results.json
 
-  # Export as CSV
-  python youtube_scraper.py --url "URL" --csv --output results.csv
-
-  # Generate Markdown report
-  python youtube_scraper.py --url "URL" --report --output report.md
-
   # Playlist
   python youtube_scraper.py --playlist "https://www.youtube.com/playlist?list=PL..."
 
-  # Batch from file
-  python youtube_scraper.py --batch urls.txt --output batch_results.json
+  # Batch from file → URLs only
+  python youtube_scraper.py --batch urls.txt --urls-only
 
-  # Subtitles
+  # Subtitles (local extraction — NOT for NotebookLM; pass URLs directly instead)
   python youtube_scraper.py --url "URL" --subtitles --subtitle-lang en
 
   # Download audio (MP3)
   python youtube_scraper.py --url "URL" --download-audio
-
-  # Download video (MP4)
-  python youtube_scraper.py --url "URL" --download-video
-
-  # Verbose mode
-  python youtube_scraper.py --url "URL" --verbose
 """
 
 import sys
@@ -634,40 +631,36 @@ def _print_pipeline_results(data: dict) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _extract_urls(data: dict | list) -> list[str]:
-    """Extract all YouTube URLs from any result shape."""
+    """Extract YouTube URLs from any result shape. All extractors normalize to webpage_url."""
+    def _u(item: dict) -> str | None:
+        return item.get("webpage_url") or item.get("url")
+
     urls = []
     if isinstance(data, list):
         for item in data:
-            u = item.get("webpage_url") or item.get("url")
-            if u:
+            if u := _u(item):
                 urls.append(u)
     elif isinstance(data, dict):
         _ext = data.get("_extractor", "")
         if _ext == "SearchExtractor":
             for r in data.get("results", []):
-                u = r.get("url")
-                if u:
+                if u := _u(r):
                     urls.append(u)
         elif _ext == "PipelineExtractor":
             for v in data.get("videos", []):
-                u = v.get("webpage_url") or v.get("url")
-                if u:
+                if u := _u(v):
                     urls.append(u)
         elif "queries" in data:
             for q in data.get("queries", []):
                 for item in q.get("videos") or q.get("results") or []:
-                    u = item.get("webpage_url") or item.get("url")
-                    if u:
+                    if u := _u(item):
                         urls.append(u)
         elif "playlist_id" in data:
             for v in data.get("entries", []):
-                if v:
-                    u = v.get("webpage_url") or v.get("url")
-                    if u:
-                        urls.append(u)
+                if v and (u := _u(v)):
+                    urls.append(u)
         else:
-            u = data.get("webpage_url") or data.get("url")
-            if u:
+            if u := _u(data):
                 urls.append(u)
     return urls
 
@@ -690,6 +683,9 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     # ── URLs-only mode: one URL per line, nothing else ────────────────────────
     if getattr(args, "urls_only", False):
         urls = _extract_urls(data)
+        if not urls:
+            print("Warning: --urls-only produced 0 URLs. Check your query or input.", file=sys.stderr)
+            sys.exit(1)
         output = "\n".join(urls)
         if output_path:
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -811,6 +807,14 @@ def main() -> None:
     """
     parser = build_parser()
     args = parser.parse_args()
+
+    # ── Fast-fail: incompatible flag combinations ─────────────────────────────
+    if args.search and args.subtitles:
+        parser.error("--search and --subtitles are incompatible. Subtitles require a single video URL (use --url).")
+    if args.search and args.url:
+        parser.error("--search and --url are mutually exclusive. Use one input mode at a time.")
+    if args.batch and args.search:
+        parser.error("--batch and --search are mutually exclusive. --batch takes a file of URLs; --search takes a keyword.")
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)

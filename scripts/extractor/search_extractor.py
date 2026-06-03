@@ -121,6 +121,7 @@ class SearchExtractor:
             "id":                    video_id,
             "title":                 g("title"),
             "url":                   url,
+            "webpage_url":           url,   # normalized alias — matches VideoExtractor contract
             "uploader":              g("uploader") or g("channel"),
             "duration":              duration,
             "duration_string":       seconds_to_hms(duration),
