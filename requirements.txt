@@ -1,0 +1,16 @@
+# Core dependency — the YouTube data engine
+yt-dlp>=2024.1.1
+
+# Rich terminal output (colored tables, progress bars, panels)
+rich>=13.0.0
+
+# Progress bars for batch operations
+tqdm>=4.66.0
+
+# Data manipulation for CSV exports and analysis
+pandas>=2.0.0
+
+# Note: ffmpeg must be installed separately (not a Python package)
+# Linux: sudo apt install ffmpeg
+# Mac:   brew install ffmpeg
+# Windows: https://ffmpeg.org/download.html

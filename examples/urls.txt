@@ -1,0 +1,14 @@
+# youtube-scraper batch URL file example
+# Lines starting with # are comments and are ignored
+# Put one YouTube URL per line
+
+# Music videos
+https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://youtu.be/9bZkp7q19f0
+
+# Shorts format also works
+# https://www.youtube.com/shorts/VIDEO_ID
+
+# You can mix different URL formats
+# https://www.youtube.com/watch?v=VIDEO_ID_HERE
+# https://youtu.be/SHORT_ID_HERE
