@@ -60,7 +60,10 @@ from utils import (
     ScraperError,
     format_error_for_report,
 )
-from extractor import VideoExtractor, PlaylistExtractor, SubtitleExtractor, Downloader
+from extractor import (
+    VideoExtractor, PlaylistExtractor, SubtitleExtractor, Downloader,
+    SearchExtractor, PipelineExtractor,
+)
 from formatter import JsonFormatter, CsvFormatter, MarkdownFormatter
 from reports import ReportGenerator
 from config import DEFAULT_OUTPUT_DIR, MAX_WORKERS
@@ -118,6 +121,87 @@ Examples:
         "--batch", "-b",
         metavar="FILE",
         help="Path to a text file with one YouTube URL per line",
+    )
+    source.add_argument(
+        "--search",
+        metavar="QUERY",
+        help='Search YouTube by keyword (e.g. --search "python tutorial")',
+    )
+    source.add_argument(
+        "--search-batch",
+        metavar="FILE",
+        dest="search_batch",
+        help="Path to a text file with one search query per line",
+    )
+
+    # ── Search & pipeline options ─────────────────────────────────────────────
+    search_group = parser.add_argument_group("Search options")
+    search_group.add_argument(
+        "--search-limit",
+        metavar="N",
+        dest="search_limit",
+        type=int,
+        default=10,
+        help="Max results to fetch per search query (default: 10)",
+    )
+    search_group.add_argument(
+        "--pipeline",
+        action="store_true",
+        help=(
+            "After searching, fetch full metadata for the top results. "
+            "Combines search → filter → extract into one command."
+        ),
+    )
+    search_group.add_argument(
+        "--pipeline-top",
+        metavar="N",
+        dest="pipeline_top",
+        type=int,
+        default=3,
+        help="How many results to fully extract after filtering (default: 3)",
+    )
+    search_group.add_argument(
+        "--transcript",
+        action="store_true",
+        help="Download subtitles and parse them to plain text (requires --pipeline)",
+    )
+
+    # ── Filter options (for pipeline and search) ──────────────────────────────
+    filter_group = parser.add_argument_group(
+        "Filter options",
+        "Applied when --pipeline is used to narrow search results before full extraction."
+    )
+    filter_group.add_argument(
+        "--filter-min-duration",
+        metavar="SECS",
+        dest="filter_min_duration",
+        type=int,
+        default=None,
+        help="Minimum video duration in seconds (e.g. 60 for 1 minute)",
+    )
+    filter_group.add_argument(
+        "--filter-max-duration",
+        metavar="SECS",
+        dest="filter_max_duration",
+        type=int,
+        default=None,
+        help="Maximum video duration in seconds (e.g. 900 for 15 minutes)",
+    )
+    filter_group.add_argument(
+        "--filter-min-views",
+        metavar="N",
+        dest="filter_min_views",
+        type=int,
+        default=None,
+        help="Minimum view count (e.g. 1000)",
+    )
+    filter_group.add_argument(
+        "--filter-max-age-days",
+        metavar="DAYS",
+        dest="filter_max_age_days",
+        type=int,
+        default=None,
+        help="Only include videos uploaded within this many days",
     )
 
     # ── Output options ────────────────────────────────────────────────────────
@@ -379,6 +463,162 @@ def handle_download(args: argparse.Namespace) -> dict:
         return dl.download_audio(url, audio_format=args.audio_format)
 
 
+def _read_query_file(path: str) -> list[str]:
+    """Read one search query per line from a text file, skipping blanks and # comments."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            queries = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+    except OSError as e:
+        logger.error(f"Cannot read file {path}: {e}")
+        sys.exit(1)
+    if not queries:
+        logger.error(f"No queries found in {path}")
+        sys.exit(1)
+    return queries
+
+
+def _build_pipeline(args: argparse.Namespace) -> PipelineExtractor:
+    """Construct a PipelineExtractor from CLI args."""
+    return PipelineExtractor(
+        search_limit=args.search_limit,
+        top_n=args.pipeline_top,
+        min_duration=args.filter_min_duration,
+        max_duration=args.filter_max_duration,
+        min_views=args.filter_min_views,
+        max_age_days=args.filter_max_age_days,
+        extract_transcript=args.transcript,
+        subtitle_lang=args.subtitle_lang,
+        output_dir=args.download_dir,
+        verbose=args.verbose,
+    )
+
+
+def handle_search(args: argparse.Namespace) -> dict:
+    """Handle YouTube keyword search — returns ranked result list."""
+    extractor = SearchExtractor(max_results=args.search_limit, verbose=args.verbose)
+    return extractor.search(args.search)
+
+
+def handle_search_batch(args: argparse.Namespace) -> dict:
+    """Handle batch search — reads one query per line from a file, runs concurrently."""
+    queries = _read_query_file(args.search_batch)
+    logger.info(f"Running batch search for {len(queries)} queries")
+    extractor = SearchExtractor(max_results=args.search_limit, verbose=args.verbose)
+
+    results: list[dict | None] = [None] * len(queries)
+
+    def _search(index_query: tuple[int, str]) -> tuple[int, dict]:
+        i, q = index_query
+        try:
+            return i, extractor.search(q)
+        except ScraperError as e:
+            logger.warning(f"Search failed for {q!r}: {e.user_message}")
+            return i, {"query": q, "error": e.user_message, "results": []}
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(_search, (i, q)): i for i, q in enumerate(queries)}
+        for future in as_completed(futures):
+            i, result = future.result()
+            results[i] = result
+
+    return {"total_queries": len(queries), "queries": [r for r in results if r is not None]}
+
+
+def handle_pipeline(args: argparse.Namespace) -> dict:
+    """Handle search → filter → full-extract pipeline for a single query."""
+    return _build_pipeline(args).run(args.search)
+
+
+def handle_pipeline_batch(args: argparse.Namespace) -> dict:
+    """Handle pipeline for every query in a search-batch file, runs concurrently."""
+    queries = _read_query_file(args.search_batch)
+    logger.info(f"Running pipeline batch for {len(queries)} queries")
+    pipeline = _build_pipeline(args)
+
+    results: list[dict | None] = [None] * len(queries)
+
+    def _run(index_query: tuple[int, str]) -> tuple[int, dict]:
+        i, q = index_query
+        try:
+            return i, pipeline.run(q)
+        except ScraperError as e:
+            logger.warning(f"Pipeline failed for {q!r}: {e.user_message}")
+            return i, {"query": q, "error": e.user_message, "videos": []}
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(_run, (i, q)): i for i, q in enumerate(queries)}
+        for future in as_completed(futures):
+            i, result = future.result()
+            results[i] = result
+
+    return {"total_queries": len(queries), "queries": [r for r in results if r is not None]}
+
+
+def _print_search_results(data: dict) -> None:
+    """Print search results as a formatted table (or plain list if rich is absent)."""
+    query   = data.get("query", "")
+    results = data.get("results", [])
+    total   = data.get("total_results", 0)
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        console = Console()
+        table = Table(
+            title=f'YouTube Search: "{query}" — {total} results',
+            show_lines=False,
+        )
+        table.add_column("#",        style="dim",  width=3)
+        table.add_column("Title",    style="bold", max_width=50)
+        table.add_column("Channel",  style="cyan", max_width=22)
+        table.add_column("Duration", justify="right")
+        table.add_column("Views",    justify="right")
+        for r in results:
+            table.add_row(
+                str(r.get("position", "")),
+                r.get("title") or "",
+                r.get("uploader") or "",
+                r.get("duration_string") or "",
+                r.get("view_count_formatted") or "",
+            )
+        console.print(table)
+    except ImportError:
+        print(f'\nSearch results for: "{query}" ({total} found)\n')
+        for r in results:
+            print(
+                f"  {r['position']:>2}. {r.get('title')} "
+                f"— {r.get('uploader')} "
+                f"[{r.get('duration_string')}] "
+                f"{r.get('view_count_formatted')} views"
+            )
+            print(f"      {r.get('url')}")
+
+
+def _print_pipeline_results(data: dict) -> None:
+    """Print pipeline results — brief summary per video with transcript word count."""
+    query    = data.get("query", "")
+    videos   = data.get("videos", [])
+    initial  = data.get("initial_result_count", 0)
+    filtered = data.get("after_filter_count", 0)
+
+    print(f'\nPipeline: "{query}"')
+    print(f"  Searched: {initial}  |  After filter: {filtered}  |  Extracted: {len(videos)}\n")
+
+    for i, v in enumerate(videos, 1):
+        if v.get("error"):
+            print(f"  {i}. [ERROR] {v.get('url')} — {v.get('error')}")
+            continue
+        transcript = v.get("transcript")
+        transcript_note = (
+            f"  ({len(transcript.split())} words)" if transcript else "  (no transcript)"
+        )
+        print(f"  {i}. {v.get('title')}")
+        print(f"     {v.get('channel')} | {v.get('duration_string')} | {v.get('view_count_formatted')} views")
+        print(f"     {v.get('webpage_url')}")
+        print(f"     Transcript:{transcript_note}")
+        print()
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # OUTPUT HANDLER
 # Decides how to format and where to send the result.
@@ -397,29 +637,52 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     If not: print to stdout (JSON) or terminal (Markdown)
     """
     output_path = Path(args.output) if args.output else None
-    is_playlist = isinstance(data, dict) and "videos" in data
-    is_batch = isinstance(data, list)
+
+    # Detect result type from _extractor tag or structure
+    _ext         = data.get("_extractor", "") if isinstance(data, dict) else ""
+    is_search    = _ext == "SearchExtractor"
+    is_pipeline  = _ext == "PipelineExtractor"
+    is_batch_res = isinstance(data, dict) and "queries" in data  # search/pipeline batch
+    is_playlist  = isinstance(data, dict) and "playlist_id" in data
+    is_batch     = isinstance(data, list)
 
     # ── Print terminal summary (before file output) ───────────────────────────
     if not args.no_print:
-        if is_playlist:
+        if is_search:
+            _print_search_results(data)
+        elif is_pipeline:
+            _print_pipeline_results(data)
+        elif is_batch_res:
+            for q in data.get("queries", []):
+                if q.get("_extractor") == "PipelineExtractor":
+                    _print_pipeline_results(q)
+                else:
+                    _print_search_results(q)
+        elif is_playlist:
             gen.print_playlist_summary(data)
         elif is_batch:
             pass  # Batch summary is in the formatted output
         elif isinstance(data, dict) and not data.get("error"):
-            # Check if this is a download result
             if data.get("mode") in ("video", "audio"):
                 gen.print_download_result(data)
-            elif not data.get("download_attempted") is False or data.get("url"):
-                # Regular video metadata
-                if "title" in data:
-                    gen.print_video_summary(data)
+            elif "title" in data and "download_attempted" not in data:
+                gen.print_video_summary(data)
 
     # ── Determine format ──────────────────────────────────────────────────────
     if args.report:
         fmt = MarkdownFormatter()
 
-        if is_playlist:
+        if is_search:
+            # Format search results as a batch (list of result entries)
+            content = fmt.format_batch(data.get("results", []))
+        elif is_pipeline:
+            content = fmt.format_batch(data.get("videos", []))
+        elif is_batch_res:
+            all_videos = []
+            for q in data.get("queries", []):
+                all_videos.extend(q.get("videos") or q.get("results") or [])
+            content = fmt.format_batch(all_videos)
+        elif is_playlist:
             content = fmt.format_playlist(data)
         elif is_batch:
             content = fmt.format_batch(data)
@@ -435,18 +698,29 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     elif args.csv:
         fmt = CsvFormatter()
 
-        if is_playlist:
-            content = fmt.format_playlist(data)
-        elif is_batch:
-            content = fmt.format_many(data)
-        else:
-            content = fmt.format(data)
+        def _csv_out(content: str, rows_or_data) -> None:
+            if output_path:
+                gen.print_save_confirmation(fmt.save(rows_or_data, output_path), "csv")
+            else:
+                print(content)
 
-        if output_path:
-            saved = fmt.save(data, output_path)
-            gen.print_save_confirmation(saved, "csv")
+        if is_search:
+            rows = data.get("results", [])
+            _csv_out(fmt.format_many(rows), rows)
+        elif is_pipeline:
+            rows = data.get("videos", [])
+            _csv_out(fmt.format_many(rows), rows)
+        elif is_batch_res:
+            rows = []
+            for q in data.get("queries", []):
+                rows.extend(q.get("videos") or q.get("results") or [])
+            _csv_out(fmt.format_many(rows), rows)
+        elif is_playlist:
+            _csv_out(fmt.format_playlist(data), data)
+        elif is_batch:
+            _csv_out(fmt.format_many(data), data)
         else:
-            print(content)
+            _csv_out(fmt.format(data), data)
 
     else:
         # Default: JSON
@@ -456,7 +730,6 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
             saved = fmt.save(data, output_path)
             gen.print_save_confirmation(saved, "json")
         else:
-            # Pretty-print to stdout
             print(fmt.format(data))
 
 
@@ -495,6 +768,18 @@ def main() -> None:
 
         elif args.batch:
             result = handle_batch(args)
+
+        elif args.search:
+            if args.pipeline:
+                result = handle_pipeline(args)
+            else:
+                result = handle_search(args)
+
+        elif args.search_batch:
+            if args.pipeline:
+                result = handle_pipeline_batch(args)
+            else:
+                result = handle_search_batch(args)
 
         else:
             # Default: single video metadata
