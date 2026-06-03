@@ -124,7 +124,7 @@ class PipelineExtractor:
         # Step 2: Filter by basic criteria
         filtered = self._apply_filters(candidates)
         logger.info(
-            f"Filter: {initial_count} → {len(filtered)} results for {query!r}"
+            f"Filter: {initial_count} -> {len(filtered)} results for {query!r}"
         )
 
         # Step 3: Full metadata for top N — fetched concurrently (independent requests)

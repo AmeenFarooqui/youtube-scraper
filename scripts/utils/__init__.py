@@ -19,6 +19,7 @@ from .error_handler import (
     NetworkError,
     RateLimitedError,
     classify_ytdlp_error,
+    format_error_for_report,
 )
 
 __all__ = [
@@ -41,4 +42,5 @@ __all__ = [
     "NetworkError",
     "RateLimitedError",
     "classify_ytdlp_error",
+    "format_error_for_report",
 ]
