@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import DEFAULT_OUTPUT_DIR
+from config import DEFAULT_OUTPUT_DIR, MAX_WORKERS
 from utils.logger import get_logger
 from utils.error_handler import ScraperError, format_error_for_report
 
@@ -73,6 +73,7 @@ class PipelineExtractor:
         extract_transcript: bool = False,
         subtitle_lang: str = "en",
         output_dir: Path | str = DEFAULT_OUTPUT_DIR,
+        workers: int = MAX_WORKERS,
         verbose: bool = False,
     ):
         """
@@ -86,6 +87,7 @@ class PipelineExtractor:
             extract_transcript: Download and parse subtitles to plain text
             subtitle_lang:      Language code for transcript extraction (default: "en")
             output_dir:         Where to save subtitle files when extracting transcripts
+            workers:            Max concurrent yt-dlp requests (caps pipeline concurrency)
             verbose:            Enable verbose yt-dlp output
         """
         self.search_limit     = search_limit
@@ -97,6 +99,7 @@ class PipelineExtractor:
         self.extract_transcript = extract_transcript
         self.subtitle_lang    = subtitle_lang
         self.output_dir       = Path(output_dir)
+        self.workers          = workers
         self.verbose          = verbose
         self._searcher        = SearchExtractor(max_results=search_limit, verbose=verbose)
 
@@ -153,7 +156,7 @@ class PipelineExtractor:
             )
             return i, metadata
 
-        with ThreadPoolExecutor(max_workers=max(len(top), 1)) as executor:
+        with ThreadPoolExecutor(max_workers=min(max(len(top), 1), self.workers)) as executor:
             futures = {
                 executor.submit(_fetch, (i, c)): i for i, c in enumerate(top)
             }

@@ -21,9 +21,8 @@ from pathlib import Path
 # Root of the skills scripts directory (where this file lives)
 SCRIPTS_DIR = Path(__file__).parent
 
-# Default directory for downloaded files
+# Default directory for downloaded files (created on demand by each writer, not at import time)
 DEFAULT_OUTPUT_DIR = SCRIPTS_DIR / "outputs"
-DEFAULT_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Default log file location (set to None to disable file logging)
 DEFAULT_LOG_FILE: str | None = None  # e.g. str(SCRIPTS_DIR / "scraper.log")

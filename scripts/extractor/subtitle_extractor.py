@@ -164,14 +164,20 @@ class SubtitleExtractor:
 
         downloaded: list[str] = []
 
+        # Snapshot existing subtitle files so we only return files from this run
+        existing = {
+            str(p) for p in self.output_dir.iterdir()
+            if p.suffix.lstrip(".") in ("srt", "vtt", "ass", "ttml")
+        } if self.output_dir.exists() else set()
+
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
 
-            # Find the files that were written
+            # Return only files that are new since the snapshot
             for path in self.output_dir.iterdir():
                 ext = path.suffix.lstrip(".")
-                if ext in ("srt", "vtt", "ass", "ttml"):
+                if ext in ("srt", "vtt", "ass", "ttml") and str(path) not in existing:
                     downloaded.append(str(path))
 
         except Exception as e:

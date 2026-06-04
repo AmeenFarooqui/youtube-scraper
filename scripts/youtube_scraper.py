@@ -146,7 +146,7 @@ Examples:
         action="store_true",
         help=(
             "After searching, fetch full metadata for the top results. "
-            "Combines search → filter → extract into one command."
+            "Combines search -> filter -> extract into one command."
         ),
     )
     search_group.add_argument(
@@ -495,6 +495,7 @@ def _build_pipeline(args: argparse.Namespace) -> PipelineExtractor:
         extract_transcript=args.transcript,
         subtitle_lang=args.subtitle_lang,
         output_dir=args.download_dir,
+        workers=args.workers,
         verbose=args.verbose,
     )
 
@@ -805,6 +806,13 @@ def main() -> None:
       4. Batch                 (multiple URLs from file)
       5. Single video          (default)
     """
+    # Ensure UTF-8 output on Windows consoles that default to cp1252/cp850.
+    # errors="replace" prevents UnicodeEncodeError for characters the console can't render.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     parser = build_parser()
     args = parser.parse_args()
 

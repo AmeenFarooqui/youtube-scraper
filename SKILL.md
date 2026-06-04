@@ -19,7 +19,11 @@ compatibility:
     - Write
   dependencies:
     - python3
-    - yt-dlp (pip install yt-dlp)
+    - yt-dlp
+    - rich
+    - tqdm
+    - pandas
+    - ffmpeg (system package, required only for --download-audio/--download-video)
 ---
 
 # YouTube Scraper Skill
@@ -35,8 +39,9 @@ The entry point is `scripts/youtube_scraper.py` in the skill directory. That is 
 ## Setup (do this once per machine)
 
 ```bash
+SKILL_DIR="$HOME/.claude/skills/youtube-scraper"
 pip install yt-dlp
-pip install -r ~/.claude/skills/youtube-scraper/requirements.txt
+pip install -r "$SKILL_DIR/requirements.txt"
 ```
 
 ---
@@ -76,10 +81,10 @@ SKILL_DIR="$HOME/.claude/skills/youtube-scraper/scripts"
 python3 "$SKILL_DIR/youtube_scraper.py" [flags]
 ```
 
-On Windows use the full Python path:
+On Windows (PowerShell):
 ```powershell
 $SKILL_DIR = "$env:USERPROFILE\.claude\skills\youtube-scraper\scripts"
-& "C:\Users\ameen\AppData\Local\Programs\Python\Python312\python.exe" "$SKILL_DIR\youtube_scraper.py" [flags]
+python "$SKILL_DIR\youtube_scraper.py" [flags]
 ```
 
 ### Step 3: Read and present results
