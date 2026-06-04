@@ -324,11 +324,20 @@ Examples:
     )
 
     # ── Batch options ─────────────────────────────────────────────────────────
+    def _positive_int(value: str) -> int:
+        try:
+            n = int(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"--workers must be an integer, got {value!r}")
+        if n < 1:
+            raise argparse.ArgumentTypeError(f"--workers must be >= 1, got {n}")
+        return n
+
     batch_group = parser.add_argument_group("Batch options")
     batch_group.add_argument(
         "--workers",
         metavar="N",
-        type=int,
+        type=_positive_int,
         default=MAX_WORKERS,
         help=f"Concurrent workers for batch processing (default: {MAX_WORKERS}). Use 1 for sequential.",
     )
