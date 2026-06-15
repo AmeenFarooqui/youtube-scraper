@@ -1180,6 +1180,28 @@ def handle_search_batch(args: argparse.Namespace) -> dict:
             i, result = future.result()
             results[i] = result
 
+    # Apply the same post-processing as handle_search, per query
+    analyzer = SentimentAnalyzer() if getattr(args, "sentiment", False) else None
+    for result in results:
+        if not result or not result.get("results"):
+            continue
+        items = result["results"]
+        items = _apply_shorts_filter(items, args)
+        if getattr(args, "comments", False):
+            items = _fetch_full_metadata(items, args)
+        if getattr(args, "dislikes", False):
+            items = _enrich_dislikes(items)
+        if analyzer:
+            for item in items:
+                if item.get("comments"):
+                    summary = analyzer.analyze(item["comments"])
+                    if summary:
+                        item["sentiment_summary"] = summary
+        items = _apply_engagement_filters(items, args)
+        items = _apply_sort(items, args)
+        result["results"] = items
+        result["total_results"] = len(items)
+
     return {"total_queries": len(queries), "queries": [r for r in results if r is not None]}
 
 
@@ -1226,6 +1248,24 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
         for future in as_completed(futures):
             i, result = future.result()
             results[i] = result
+
+    # Apply the same post-processing as handle_pipeline, per query
+    analyzer = SentimentAnalyzer() if getattr(args, "sentiment", False) else None
+    for result in results:
+        if not result or not result.get("videos"):
+            continue
+        items = result["videos"]
+        if getattr(args, "dislikes", False):
+            items = _enrich_dislikes(items)
+        if analyzer:
+            for item in items:
+                if item.get("comments"):
+                    summary = analyzer.analyze(item["comments"])
+                    if summary:
+                        item["sentiment_summary"] = summary
+        items = _apply_engagement_filters(items, args)
+        items = _apply_sort(items, args)
+        result["videos"] = items
 
     return {"total_queries": len(queries), "queries": [r for r in results if r is not None]}
 
@@ -1508,8 +1548,8 @@ def main() -> None:
         parser.error("--batch and --search are mutually exclusive. --batch takes a file of URLs; --search takes a keyword.")
     if getattr(args, "sentiment", False) and not getattr(args, "comments", False):
         parser.error("--sentiment requires --comments to be enabled.")
-    if getattr(args, "transcript", False) and not getattr(args, "pipeline", False):
-        parser.error("--transcript requires --pipeline.")
+    if getattr(args, "transcript", False) and not (args.search or args.search_batch):
+        parser.error("--transcript requires --search or --search-batch.")
     if getattr(args, "download_subs", False) and not getattr(args, "subtitles", False):
         parser.error("--download-subs requires --subtitles.")
     if getattr(args, "sort_by", None) == "dislikes" and not getattr(args, "dislikes", False):
@@ -1525,8 +1565,11 @@ def main() -> None:
         parser.error("--filter-max-dislikes requires --dislikes.")
     for _ratio_arg in ("filter_min_positive_ratio", "filter_min_negative_ratio"):
         _val = getattr(args, _ratio_arg, None)
-        if _val is not None and not (0.0 <= _val <= 1.0):
-            parser.error(f"--{_ratio_arg.replace('_', '-')} must be between 0.0 and 1.0, got {_val}")
+        if _val is not None:
+            if not (0.0 <= _val <= 1.0):
+                parser.error(f"--{_ratio_arg.replace('_', '-')} must be between 0.0 and 1.0, got {_val}")
+            if not getattr(args, "sentiment", False):
+                parser.error(f"--{_ratio_arg.replace('_', '-')} requires --comments and --sentiment.")
     for _count_arg, _flag in (
         ("search_limit", "--search-limit"),
         ("pipeline_top", "--pipeline-top"),

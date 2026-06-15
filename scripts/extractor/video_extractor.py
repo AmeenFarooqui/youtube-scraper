@@ -308,6 +308,8 @@ class VideoExtractor:
         combined_count = 0
         best_video = None
         best_height = -1
+        best_fps = -1
+        best_tbr = -1
         available_extensions = set()
 
         for fmt in formats:
@@ -344,8 +346,20 @@ class VideoExtractor:
                     height = int(height) if height is not None else -1
                 except (TypeError, ValueError):
                     height = -1
-                if height > best_height:
+                fps = fmt.get("fps") or -1
+                try:
+                    fps = int(fps)
+                except (TypeError, ValueError):
+                    fps = -1
+                tbr = fmt.get("tbr") or -1
+                try:
+                    tbr = float(tbr)
+                except (TypeError, ValueError):
+                    tbr = -1
+                if (height, fps, tbr) > (best_height, best_fps, best_tbr):
                     best_height = height
+                    best_fps = fps
+                    best_tbr = tbr
                     best_video = entry or self._format_entry(fmt)
 
         summary = {
