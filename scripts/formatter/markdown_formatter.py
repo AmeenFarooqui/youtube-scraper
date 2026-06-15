@@ -138,6 +138,14 @@ class MarkdownFormatter:
         output_path.write_text(content, encoding="utf-8")
         return output_path
 
+    @staticmethod
+    def _cell(text: str | None, max_len: int = 0) -> str:
+        """Escape user-controlled text for safe use inside a Markdown table cell."""
+        s = str(text) if text is not None else ""
+        if max_len:
+            s = s[:max_len]
+        return s.replace("|", "\\|").replace("\n", " ")
+
     # ── Video report sections ─────────────────────────────────────────────────
 
     def _header_section(self, d: dict) -> str:
@@ -187,11 +195,11 @@ class MarkdownFormatter:
 {rating_line}"""
 
     def _channel_section(self, d: dict) -> str:
-        channel = d.get("channel") or d.get("uploader") or "Unknown"
+        channel = self._cell(d.get("channel") or d.get("uploader") or "Unknown")
         channel_id = d.get("channel_id") or "Unknown"
         channel_url = d.get("channel_url") or d.get("uploader_url") or ""
         subscribers = d.get("channel_follower_count_formatted") or format_number(d.get("channel_follower_count"))
-        uploader = d.get("uploader") or "Unknown"
+        uploader = self._cell(d.get("uploader") or "Unknown")
 
         channel_link = f"[{channel}]({channel_url})" if channel_url else channel
 
@@ -319,7 +327,7 @@ class MarkdownFormatter:
     def _playlist_header(self, d: dict) -> str:
         title = d.get("title") or "Unknown Playlist"
         url = d.get("webpage_url") or d.get("url") or ""
-        uploader = d.get("uploader") or "Unknown"
+        uploader = self._cell(d.get("uploader") or "Unknown")
         total = d.get("total_videos", 0)
         available = d.get("available_videos", 0)
         unavailable = d.get("unavailable_videos", 0)
@@ -348,8 +356,8 @@ class MarkdownFormatter:
 | **Total Views** | {s.get("total_views_formatted", "N/A")} |
 | **Earliest Upload** | {s.get("earliest_upload", "N/A")} |
 | **Latest Upload** | {s.get("latest_upload", "N/A")} |
-| **Shortest Video** | {(s.get("shortest_video") or {}).get("title", "N/A")} ({(s.get("shortest_video") or {}).get("duration", "N/A")}) |
-| **Longest Video** | {(s.get("longest_video") or {}).get("title", "N/A")} ({(s.get("longest_video") or {}).get("duration", "N/A")}) |"""
+| **Shortest Video** | {self._cell((s.get("shortest_video") or {}).get("title", "N/A"))} ({(s.get("shortest_video") or {}).get("duration", "N/A")}) |
+| **Longest Video** | {self._cell((s.get("longest_video") or {}).get("title", "N/A"))} ({(s.get("longest_video") or {}).get("duration", "N/A")}) |"""
 
     def _playlist_video_table(self, d: dict) -> str:
         videos = d.get("videos") or []

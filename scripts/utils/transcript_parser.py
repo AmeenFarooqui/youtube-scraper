@@ -43,6 +43,10 @@ def parse_srt(text: str) -> str:
     for line in text.splitlines():
         line = line.strip()
         if not line or _SEQUENCE_NUM.match(line) or _SRT_TIMESTAMP.match(line):
+            # Reset at block boundaries so intentional lyric/speech repetition
+            # across consecutive subtitle blocks is preserved.
+            if not line:
+                prev = ""
             continue
         line = _HTML_TAGS.sub("", line).strip()
         if line and line != prev:
@@ -62,6 +66,7 @@ def parse_vtt(text: str) -> str:
         line = line.strip()
         if not line:
             in_header_block = False
+            prev = ""  # Reset at block boundary to preserve intentional repetition
             continue
         if _VTT_HEADERS.match(line):
             in_header_block = True

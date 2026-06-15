@@ -223,5 +223,96 @@ class TestMarkdownFormatter(unittest.TestCase):
         self.assertIn("## Videos", output)
 
 
+class TestMarkdownPipeEscaping(unittest.TestCase):
+    """Finding 32: pipe characters in user-controlled fields must not break tables."""
+
+    def setUp(self):
+        self.fmt = MarkdownFormatter()
+
+    def test_batch_title_with_pipe_escaped(self):
+        data = make_video_metadata(title="Part 1 | Part 2", channel="Chan|nel")
+        output = self.fmt.format_batch([data])
+        self.assertIn("Part 1 \\| Part 2", output)
+        self.assertIn("Chan\\|nel", output)
+
+    def test_playlist_summary_shortest_title_escaped(self):
+        playlist_data = {
+            "id": "PL1",
+            "title": "Test",
+            "url": "https://youtube.com/playlist?list=PL1",
+            "webpage_url": "https://youtube.com/playlist?list=PL1",
+            "uploader": "Chan|nel",
+            "total_videos": 1,
+            "available_videos": 1,
+            "unavailable_videos": 0,
+            "videos": [],
+            "errors": [],
+            "summary": {
+                "total_duration_formatted": "5:00",
+                "average_duration_formatted": "5:00",
+                "total_views_formatted": "1K",
+                "earliest_upload": "Jan 2024",
+                "latest_upload": "Jan 2024",
+                "shortest_video": {"title": "A | B video", "duration": "1:00"},
+                "longest_video": {"title": "C | D video", "duration": "5:00"},
+            },
+        }
+        output = self.fmt.format_playlist(playlist_data)
+        self.assertIn("A \\| B video", output)
+        self.assertIn("C \\| D video", output)
+        self.assertIn("Chan\\|nel", output)
+
+    def test_channel_section_escapes_pipe(self):
+        data = make_video_metadata(channel="A|B Channel", uploader="Up|loader")
+        output = self.fmt.format_video(data)
+        self.assertIn("A\\|B Channel", output)
+        self.assertIn("Up\\|loader", output)
+
+
+class TestEngagementFilterWarning(unittest.TestCase):
+    """Finding 11: warn when likes/subscriber filters applied to stubs with None fields."""
+
+    def _make_args(self, **kwargs):
+        import argparse
+        defaults = dict(
+            filter_min_views=None, filter_max_views=None,
+            filter_min_likes=None, filter_max_likes=None,
+            filter_min_subscribers=None, filter_max_subscribers=None,
+            filter_min_dislikes=None, filter_max_dislikes=None,
+            filter_min_positive_ratio=None, filter_min_negative_ratio=None,
+        )
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    def test_warning_emitted_for_likes_filter_on_stubs(self):
+        import youtube_scraper
+        items = [
+            {"title": "A", "like_count": None},
+            {"title": "B", "like_count": None},
+        ]
+        args = self._make_args(filter_min_likes=100)
+        with self.assertLogs("youtube_scraper", level="WARNING") as cm:
+            result = youtube_scraper._apply_engagement_filters(items, args)
+        self.assertTrue(any("like_count" in msg for msg in cm.output))
+        self.assertEqual(result, [])
+
+    def test_no_warning_when_field_present(self):
+        import youtube_scraper
+        import logging
+        items = [
+            {"title": "A", "like_count": 500},
+            {"title": "B", "like_count": 50},
+        ]
+        args = self._make_args(filter_min_likes=100)
+        with self.assertLogs("youtube_scraper", level="WARNING") as cm:
+            # Emit a sentinel so assertLogs doesn't fail if no other warnings appear
+            logging.getLogger("youtube_scraper").warning("sentinel")
+            result = youtube_scraper._apply_engagement_filters(items, args)
+        stub_warnings = [m for m in cm.output if "like_count" in m]
+        self.assertEqual(stub_warnings, [])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["title"], "A")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

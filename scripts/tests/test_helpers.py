@@ -11,6 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import unittest
+from utils.transcript_parser import parse_srt, parse_vtt
 from utils.helpers import (
     seconds_to_hms,
     format_duration,
@@ -156,6 +157,106 @@ class TestTruncate(unittest.TestCase):
 
     def test_none(self):
         self.assertEqual(truncate(None), "")
+
+
+class TestTranscriptParser(unittest.TestCase):
+    """Finding 15: repeated lines in consecutive blocks should be preserved."""
+
+    def test_srt_adjacent_block_repetition_preserved(self):
+        """Same text in two consecutive SRT blocks must not be deduped."""
+        srt = (
+            "1\n00:00:01,000 --> 00:00:03,000\nI love you\n\n"
+            "2\n00:00:03,000 --> 00:00:05,000\nI love you\n"
+        )
+        result = parse_srt(srt)
+        self.assertEqual(result, "I love you I love you")
+
+    def test_srt_within_block_dedup_still_works(self):
+        """Identical adjacent lines within a single block are still collapsed."""
+        srt = "1\n00:00:01,000 --> 00:00:03,000\nhello\nhello\n"
+        result = parse_srt(srt)
+        self.assertEqual(result, "hello")
+
+    def test_vtt_adjacent_block_repetition_preserved(self):
+        """Same text in two consecutive VTT cue blocks must not be deduped."""
+        vtt = (
+            "WEBVTT\n\n"
+            "00:00:01.000 --> 00:00:03.000\nI love you\n\n"
+            "00:00:03.000 --> 00:00:05.000\nI love you\n"
+        )
+        result = parse_vtt(vtt)
+        self.assertEqual(result, "I love you I love you")
+
+    def test_srt_non_adjacent_repetition_preserved(self):
+        """Same text appearing later in the file (non-adjacent) should be kept."""
+        srt = (
+            "1\n00:00:01,000 --> 00:00:03,000\nhello\n\n"
+            "2\n00:00:03,000 --> 00:00:05,000\nworld\n\n"
+            "3\n00:00:05,000 --> 00:00:07,000\nhello\n"
+        )
+        result = parse_srt(srt)
+        self.assertEqual(result, "hello world hello")
+
+
+class TestLoggerFileHandlerReentry(unittest.TestCase):
+    """Finding 34: get_logger with log_file on re-entry should add the file handler."""
+
+    def test_file_handler_added_on_second_call(self):
+        import logging
+        import tempfile
+        import os
+        from utils.logger import get_logger
+
+        name = "test_reentry_logger_unique"
+        # Clear any pre-existing logger state
+        log = logging.getLogger(name)
+        for h in log.handlers[:]:
+            log.removeHandler(h)
+
+        # First call — no file
+        get_logger(name, verbose=False)
+        self.assertEqual(
+            sum(1 for h in log.handlers if isinstance(h, logging.FileHandler)), 0
+        )
+
+        # Second call — with a log file
+        with tempfile.NamedTemporaryFile(suffix=".log", delete=False) as f:
+            path = f.name
+        try:
+            get_logger(name, log_file=path, verbose=False)
+            file_handlers = [h for h in log.handlers if isinstance(h, logging.FileHandler)]
+            self.assertEqual(len(file_handlers), 1)
+        finally:
+            for h in log.handlers[:]:
+                if isinstance(h, logging.FileHandler):
+                    h.close()
+                    log.removeHandler(h)
+            os.unlink(path)
+
+    def test_same_file_not_added_twice(self):
+        import logging
+        import tempfile
+        import os
+        from utils.logger import get_logger
+
+        name = "test_no_dup_file_handler"
+        log = logging.getLogger(name)
+        for h in log.handlers[:]:
+            log.removeHandler(h)
+
+        with tempfile.NamedTemporaryFile(suffix=".log", delete=False) as f:
+            path = f.name
+        try:
+            get_logger(name, log_file=path)
+            get_logger(name, log_file=path)  # second call same path
+            file_handlers = [h for h in log.handlers if isinstance(h, logging.FileHandler)]
+            self.assertEqual(len(file_handlers), 1)
+        finally:
+            for h in log.handlers[:]:
+                if isinstance(h, logging.FileHandler):
+                    h.close()
+                    log.removeHandler(h)
+            os.unlink(path)
 
 
 if __name__ == "__main__":

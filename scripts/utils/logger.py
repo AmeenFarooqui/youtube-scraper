@@ -32,10 +32,26 @@ def get_logger(name: str = "youtube_scraper", log_file: str | None = None, verbo
     logger = logging.getLogger(name)
     level = logging.DEBUG if verbose else logging.INFO
 
-    # Avoid adding duplicate handlers if this logger was already set up
-    # Always update the level so --verbose takes effect even after module-level init
+    # Avoid adding duplicate console handlers if this logger was already set up.
+    # Always update the level so --verbose takes effect even after module-level init.
+    # File handler: add if a new log_file path is requested and not already attached.
     if logger.handlers:
         logger.setLevel(level)
+        if log_file:
+            log_path = Path(log_file).resolve()
+            existing_paths = {
+                Path(h.baseFilename).resolve()
+                for h in logger.handlers
+                if isinstance(h, logging.FileHandler)
+            }
+            if log_path not in existing_paths:
+                fh = logging.FileHandler(log_path, encoding="utf-8")
+                fh.setLevel(logging.DEBUG)
+                fh.setFormatter(logging.Formatter(
+                    fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+                    datefmt="%Y-%m-%d %H:%M:%S",
+                ))
+                logger.addHandler(fh)
         return logger
 
     logger.setLevel(level)

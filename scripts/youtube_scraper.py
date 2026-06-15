@@ -1050,6 +1050,12 @@ def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> li
     Each filter is a (arg_name, field_key, comparator) triple.
     Items missing the field are excluded when a threshold is set.
     """
+    # Fields that may be missing in search stubs (require --comments or --pipeline
+    # to be populated); warn the user so they know results may be silently excluded.
+    _STUB_FIELDS = {
+        "like_count": ("--filter-min-likes / --filter-max-likes", "--comments or --pipeline"),
+        "channel_follower_count": ("--filter-min-subscribers / --filter-max-subscribers", "--pipeline"),
+    }
     numeric_filters = [
         ("filter_min_views",        "view_count",             lambda v, t: v >= t),
         ("filter_max_views",        "view_count",             lambda v, t: v <= t),
@@ -1064,6 +1070,15 @@ def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> li
         threshold = getattr(args, arg_name, None)
         if threshold is None:
             continue
+        if field in _STUB_FIELDS and items:
+            _missing = sum(1 for i in items if i.get(field) is None)
+            if _missing:
+                flag, hint = _STUB_FIELDS[field]
+                logger.warning(
+                    f"{flag}: {_missing} item(s) have no '{field}' data "
+                    f"(search stubs lack this field — use {hint} to populate it) "
+                    "and will be excluded"
+                )
         items = [
             item for item in items
             if (val := item.get(field)) is not None and test(val, threshold)

@@ -35,10 +35,12 @@ from config import BASE_YDL_OPTS
 from utils.logger import get_logger, YtDlpLogger
 from utils.helpers import (
     format_duration,
-    safe_get,
     format_number,
     format_date,
+    flatten_list,
+    safe_get,
     seconds_to_hms,
+    truncate,
     is_youtube_short,
 )
 from utils.error_handler import classify_ytdlp_error, format_error_for_report
@@ -204,33 +206,60 @@ class PlaylistExtractor:
         url = g("url") or g("webpage_url")
         is_short = is_youtube_short(url, duration_secs)
 
+        thumbnails = g("thumbnails") or []
+        best_thumbnail = thumbnails[-1].get("url") if thumbnails else g("thumbnail")
+        tags = g("tags") or []
+        categories = g("categories") or []
+        chapters = g("chapters") or []
+
         return {
             "position": position,
             "id": g("id"),
             "title": g("title"),
             "url": url,
+            "webpage_url": g("webpage_url") or url,
             "uploader": g("uploader") or g("channel"),
+            "channel": g("channel") or g("uploader"),
             "duration": duration_secs,
             "duration_string": seconds_to_hms(duration_secs),
+            "duration_formatted": format_duration(duration_secs),
             "upload_date": upload_date,
             "upload_date_formatted": format_date(upload_date),
             "view_count": g("view_count"),
+            "view_count_formatted": format_number(g("view_count")),
             "availability": g("availability"),
-            "thumbnails": g("thumbnails") or [],
+            "thumbnail": best_thumbnail,
+            "thumbnails": thumbnails,
             # Full-mode extras (None in flat mode)
             "like_count": g("like_count"),
+            "like_count_formatted": format_number(g("like_count")),
             "comment_count": g("comment_count"),
-            "tags": g("tags") or [],
-            "categories": g("categories") or [],
+            "comment_count_formatted": format_number(g("comment_count")),
+            "average_rating": g("average_rating"),
+            "tags": tags,
+            "tags_string": flatten_list(tags),
+            "categories": categories,
+            "categories_string": flatten_list(categories),
             "description": g("description"),
+            "description_short": truncate(g("description") or "", 300),
+            "live_status": g("live_status"),
             "is_short": is_short,
             "content_type": "short" if is_short else "video",
+            "chapters": chapters,
+            "has_chapters": len(chapters) > 0,
+            "chapter_count": len(chapters),
+            "heatmap": g("heatmap") or [],
             # Extended fields: populated in full-details mode, None in flat mode
             "channel_id": g("channel_id"),
             "channel_url": g("channel_url") or g("uploader_url"),
             "channel_follower_count": g("channel_follower_count"),
+            "channel_follower_count_formatted": format_number(g("channel_follower_count")),
+            "uploader_id": g("uploader_id"),
+            "uploader_url": g("uploader_url"),
             "age_limit": g("age_limit"),
             "language": g("language"),
+            "subtitles_manual": list((g("subtitles") or {}).keys()),
+            "subtitles_auto": list((g("automatic_captions") or {}).keys()),
         }
 
     def _compute_summary(self, videos: list[dict]) -> dict:
