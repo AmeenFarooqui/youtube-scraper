@@ -119,7 +119,6 @@ This installs:
 - `yt-dlp` — the core YouTube data engine
 - `rich` — colored terminal output with tables
 - `tqdm` — progress bars for batch operations
-- `pandas` — available for data analysis
 - `vaderSentiment` — lexicon-based comment sentiment analysis
 
 #### Step 3: Install ffmpeg (optional, required for downloads)

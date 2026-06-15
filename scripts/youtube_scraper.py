@@ -726,6 +726,9 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
 
     def process_url(index_url: tuple[int, str]) -> tuple[int, dict]:
         i, url = index_url
+        if detect_url_type(url) != "video":
+            logger.warning(f"[{i+1}/{len(urls)}] Skipping non-video URL: {url}")
+            return i, {"error": True, "error_type": "InvalidURLError", "message": "Batch mode only supports video URLs.", "url": url}
         logger.info(f"[{i+1}/{len(urls)}] Processing: {url}")
         extractor = VideoExtractor(verbose=_verbose)
 
@@ -989,14 +992,14 @@ def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> li
     if min_pos is not None:
         items = [
             i for i in items
-            if (s := i.get("sentiment_summary")) and s.get("positive_pct", 0) >= min_pos * 100
+            if (s := i.get("sentiment_summary")) and s.get("positive_pct", 0) >= min_pos
         ]
 
     min_neg = getattr(args, "filter_min_negative_ratio", None)
     if min_neg is not None:
         items = [
             i for i in items
-            if (s := i.get("sentiment_summary")) and s.get("negative_pct", 0) >= min_neg * 100
+            if (s := i.get("sentiment_summary")) and s.get("negative_pct", 0) >= min_neg
         ]
 
     return items
@@ -1282,7 +1285,7 @@ def _extract_urls(data: dict | list) -> list[str]:
                 for item in q.get("videos") or q.get("results") or []:
                     if u := _u(item):
                         urls.append(u)
-        elif "playlist_id" in data:
+        elif _ext == "PlaylistExtractor":
             for v in data.get("entries", []):
                 if v and (u := _u(v)):
                     urls.append(u)
@@ -1328,7 +1331,7 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     is_pipeline  = _ext == "PipelineExtractor"
     is_channel   = _ext == "ChannelExtractor"
     is_batch_res = isinstance(data, dict) and "queries" in data  # search/pipeline batch
-    is_playlist  = isinstance(data, dict) and "playlist_id" in data
+    is_playlist  = _ext == "PlaylistExtractor"
     is_batch     = isinstance(data, list)
 
     # ── Print terminal summary (before file output) ───────────────────────────

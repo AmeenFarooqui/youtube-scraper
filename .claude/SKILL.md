@@ -22,7 +22,6 @@ compatibility:
     - yt-dlp
     - rich
     - tqdm
-    - pandas
     - ffmpeg (system package, required only for --download-audio/--download-video)
 ---
 
