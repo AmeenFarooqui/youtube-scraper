@@ -52,8 +52,9 @@ class VideoExtractor:
     The returned dict always has the same top-level keys (values may be None).
     """
 
-    def __init__(self, verbose: bool = False):
+    def __init__(self, verbose: bool = False, include_detailed_formats: bool = False):
         self.verbose = verbose
+        self.include_detailed_formats = include_detailed_formats
         self._ydl_logger = YtDlpLogger(get_logger("yt_dlp", verbose=verbose))
 
     def _build_opts(self, get_comments: bool = False) -> dict:
@@ -297,66 +298,91 @@ class VideoExtractor:
 
         yt-dlp returns a list of format dicts. Each one represents a specific
         combination of resolution, codec, container, and bitrate available for download.
-        We group them into video-only, audio-only, and combined streams.
+        Detailed stream lists are only built when explicitly requested.
         """
         video_formats = []
         audio_formats = []
         combined_formats = []
+        video_only_count = 0
+        audio_only_count = 0
+        combined_count = 0
+        best_video = None
+        best_height = -1
+        available_extensions = set()
 
         for fmt in formats:
             has_video = fmt.get("vcodec", "none") not in ("none", None)
             has_audio = fmt.get("acodec", "none") not in ("none", None)
-
-            entry = {
-                "format_id": fmt.get("format_id"),
-                "ext": fmt.get("ext"),
-                "resolution": fmt.get("resolution") or self._build_resolution(fmt),
-                "fps": fmt.get("fps"),
-                "vcodec": fmt.get("vcodec"),
-                "acodec": fmt.get("acodec"),
-                "abr": fmt.get("abr"),        # Audio bitrate (kbps)
-                "vbr": fmt.get("vbr"),        # Video bitrate (kbps)
-                "tbr": fmt.get("tbr"),        # Total bitrate
-                "filesize": fmt.get("filesize"),
-                "filesize_approx": fmt.get("filesize_approx"),
-                "filesize_formatted": format_filesize(
-                    fmt.get("filesize") or fmt.get("filesize_approx")
-                ),
-                "protocol": fmt.get("protocol"),
-                "format_note": fmt.get("format_note"),
-            }
+            ext = fmt.get("ext")
+            if ext:
+                available_extensions.add(ext)
 
             if has_video and has_audio:
-                combined_formats.append(entry)
+                combined_count += 1
             elif has_video:
-                video_formats.append(entry)
+                video_only_count += 1
             elif has_audio:
-                audio_formats.append(entry)
+                audio_only_count += 1
 
-        # Best resolution available
-        best_video = None
-        best_height = 0
-        for fmt in video_formats + combined_formats:
-            h = fmt.get("resolution", "")
-            if h and "x" in str(h):
+            entry = None
+            if self.include_detailed_formats:
+                entry = self._format_entry(fmt)
+                if has_video and has_audio:
+                    combined_formats.append(entry)
+                elif has_video:
+                    video_formats.append(entry)
+                elif has_audio:
+                    audio_formats.append(entry)
+
+            if has_video:
+                height = fmt.get("height")
+                if height is None:
+                    resolution = fmt.get("resolution")
+                    if resolution and "x" in str(resolution):
+                        height = str(resolution).rsplit("x", 1)[-1]
                 try:
-                    height = int(str(h).split("x")[-1])
-                    if height > best_height:
-                        best_height = height
-                        best_video = fmt
-                except (ValueError, IndexError):
-                    pass
+                    height = int(height) if height is not None else -1
+                except (TypeError, ValueError):
+                    height = -1
+                if height > best_height:
+                    best_height = height
+                    best_video = entry or self._format_entry(fmt)
 
-        return {
+        summary = {
             "total_formats": len(formats),
-            "video_only_count": len(video_formats),
-            "audio_only_count": len(audio_formats),
-            "combined_count": len(combined_formats),
-            "video_formats": video_formats,
-            "audio_formats": audio_formats,
-            "combined_formats": combined_formats,
+            "video_only_count": video_only_count,
+            "audio_only_count": audio_only_count,
+            "combined_count": combined_count,
             "best_video_format": best_video,
-            "available_extensions": list({f.get("ext") for f in formats if f.get("ext")}),
+            "available_extensions": sorted(available_extensions),
+        }
+        if self.include_detailed_formats:
+            summary.update({
+                "video_formats": video_formats,
+                "audio_formats": audio_formats,
+                "combined_formats": combined_formats,
+            })
+        return summary
+
+    def _format_entry(self, fmt: dict) -> dict:
+        """Return the normalized subset of fields exposed for one stream."""
+        return {
+            "format_id": fmt.get("format_id"),
+            "ext": fmt.get("ext"),
+            "resolution": fmt.get("resolution") or self._build_resolution(fmt),
+            "fps": fmt.get("fps"),
+            "vcodec": fmt.get("vcodec"),
+            "acodec": fmt.get("acodec"),
+            "abr": fmt.get("abr"),
+            "vbr": fmt.get("vbr"),
+            "tbr": fmt.get("tbr"),
+            "filesize": fmt.get("filesize"),
+            "filesize_approx": fmt.get("filesize_approx"),
+            "filesize_formatted": format_filesize(
+                fmt.get("filesize") or fmt.get("filesize_approx")
+            ),
+            "protocol": fmt.get("protocol"),
+            "format_note": fmt.get("format_note"),
         }
 
     def _analyze_subtitles(self, manual: dict, auto: dict) -> dict:

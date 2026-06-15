@@ -246,6 +246,15 @@ Examples:
             "Ideal for piping into 'notebooklm source add' or a batch file."
         ),
     )
+    output_group.add_argument(
+        "--detailed-formats",
+        action="store_true",
+        dest="detailed_formats",
+        help=(
+            "Include every available video/audio stream in formats_summary. "
+            "Disabled by default to keep output and cache entries compact."
+        ),
+    )
 
     # ── Subtitle options ──────────────────────────────────────────────────────
     subtitle_group = parser.add_argument_group("Subtitles")
@@ -625,6 +634,16 @@ def _make_failure_tracker(args: argparse.Namespace):
     return FailureTracker(path) if path else None
 
 
+def _compact_format_summary(data: dict) -> dict:
+    """Remove legacy detailed stream lists from a cached compact result."""
+    summary = data.get("formats_summary")
+    if isinstance(summary, dict):
+        summary.pop("video_formats", None)
+        summary.pop("audio_formats", None)
+        summary.pop("combined_formats", None)
+    return data
+
+
 def handle_video(args: argparse.Namespace) -> dict:
     """Handle single video metadata extraction (with cache + optional comments)."""
     url = args.url
@@ -636,12 +655,14 @@ def handle_video(args: argparse.Namespace) -> dict:
     get_comments = getattr(args, "comments", False)
 
     # Cache: only skip cache when comments are requested (comments won't be cached from a prior run)
-    cache = None if get_comments else _make_cache(args)
+    detailed_formats = getattr(args, "detailed_formats", False)
+    cache = None if get_comments or detailed_formats else _make_cache(args)
     if cache:
         video_id = extract_video_id(url)
         if video_id:
             cached = cache.get(video_id)
             if cached:
+                _compact_format_summary(cached)
                 logger.info(f"Cache hit for {video_id} — skipping network fetch")
                 if getattr(args, "dislikes", False):
                     cached = _enrich_dislikes_single(cached)
@@ -649,7 +670,10 @@ def handle_video(args: argparse.Namespace) -> dict:
                     cached = _enrich_sentiment_single(cached)
                 return cached
 
-    extractor = VideoExtractor(verbose=args.verbose)
+    extractor = VideoExtractor(
+        verbose=args.verbose,
+        include_detailed_formats=detailed_formats,
+    )
     result = extractor.extract(url, get_comments=get_comments)
 
     # Apply comments_max cap
@@ -706,6 +730,9 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
     _skipped = len(_all_urls) - len(urls)
     if _skipped:
         logger.warning(f"Skipped {_skipped} non-video URL(s) in batch (playlists/channels not supported)")
+    if not urls:
+        logger.error("No video URLs remain after filtering batch input.")
+        sys.exit(1)
 
     # Deduplicate by video ID, preserving order
     seen_ids: set[str] = set()
@@ -729,6 +756,7 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
     cache = _make_cache(args)
     tracker = _make_failure_tracker(args)
     get_comments = getattr(args, "comments", False)
+    detailed_formats = getattr(args, "detailed_formats", False)
     _verbose = args.verbose
 
     def process_url(index_url: tuple[int, str]) -> tuple[int, dict]:
@@ -737,21 +765,25 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
             logger.warning(f"[{i+1}/{len(urls)}] Skipping non-video URL: {url}")
             return i, {"error": True, "error_type": "InvalidURLError", "message": "Batch mode only supports video URLs.", "url": url}
         logger.info(f"[{i+1}/{len(urls)}] Processing: {url}")
-        extractor = VideoExtractor(verbose=_verbose)
+        extractor = VideoExtractor(
+            verbose=_verbose,
+            include_detailed_formats=detailed_formats,
+        )
 
         # Check cache (skip when fetching comments)
-        if cache and not get_comments:
+        if cache and not get_comments and not detailed_formats:
             video_id = extract_video_id(url)
             if video_id:
                 cached = cache.get(video_id)
                 if cached:
+                    _compact_format_summary(cached)
                     logger.info(f"Cache hit: {video_id}")
                     return i, cached
 
         try:
             data = extractor.extract(url, get_comments=get_comments)
             # Store in cache
-            if cache and not get_comments and data.get("id"):
+            if cache and not get_comments and not detailed_formats and data.get("id"):
                 cache.put(data["id"], url, data)
             return i, data
         except ScraperError as e:
@@ -874,6 +906,7 @@ def _build_pipeline(args: argparse.Namespace) -> PipelineExtractor:
         verbose=args.verbose,
         get_comments=getattr(args, "comments", False),
         comments_max=getattr(args, "comments_max", 500),
+        include_detailed_formats=getattr(args, "detailed_formats", False),
     )
 
 
@@ -891,6 +924,7 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
     get_comments = getattr(args, "comments", False)
     max_c = getattr(args, "comments_max", 500)
     _verbose = args.verbose
+    detailed_formats = getattr(args, "detailed_formats", False)
     results: list[dict | None] = [None] * len(stubs)
 
     def _fetch(index_stub: tuple[int, dict]) -> tuple[int, dict]:
@@ -898,7 +932,10 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
         url = stub.get("url") or stub.get("webpage_url")
         if not url:
             return i, stub
-        extractor = VideoExtractor(verbose=_verbose)
+        extractor = VideoExtractor(
+            verbose=_verbose,
+            include_detailed_formats=detailed_formats,
+        )
         try:
             data = extractor.extract(url, get_comments=get_comments)
             if get_comments and data.get("comments"):
@@ -1471,6 +1508,17 @@ def main() -> None:
         parser.error("--batch and --search are mutually exclusive. --batch takes a file of URLs; --search takes a keyword.")
     if getattr(args, "sentiment", False) and not getattr(args, "comments", False):
         parser.error("--sentiment requires --comments to be enabled.")
+    if getattr(args, "transcript", False) and not getattr(args, "pipeline", False):
+        parser.error("--transcript requires --pipeline.")
+    if getattr(args, "download_subs", False) and not getattr(args, "subtitles", False):
+        parser.error("--download-subs requires --subtitles.")
+    if getattr(args, "sort_by", None) == "dislikes" and not getattr(args, "dislikes", False):
+        parser.error("--sort-by dislikes requires --dislikes.")
+    if getattr(args, "sort_by", None) in ("positive_ratio", "negative_ratio"):
+        if not getattr(args, "sentiment", False):
+            parser.error(
+                f"--sort-by {args.sort_by} requires --comments and --sentiment."
+            )
     if getattr(args, "filter_min_dislikes", None) is not None and not getattr(args, "dislikes", False):
         parser.error("--filter-min-dislikes requires --dislikes.")
     if getattr(args, "filter_max_dislikes", None) is not None and not getattr(args, "dislikes", False):

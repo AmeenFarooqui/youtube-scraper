@@ -576,6 +576,7 @@ python youtube_scraper.py --url "URL" --verbose
 | `--csv` | Export as CSV |
 | `--report` | Generate Markdown report |
 | `--urls-only` | Output only URLs, one per line |
+| `--detailed-formats` | Include every stream in `formats_summary` (compact counts and best format are the default) |
 | `--pipeline` | After search, fetch full metadata for top results |
 | `--pipeline-top N` | How many results to fully extract (default: 3) |
 | `--no-cache` | Bypass SQLite cache |

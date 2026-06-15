@@ -77,6 +77,7 @@ class PipelineExtractor:
         verbose: bool = False,
         get_comments: bool = False,
         comments_max: int = 500,
+        include_detailed_formats: bool = False,
     ):
         """
         Args:
@@ -93,6 +94,7 @@ class PipelineExtractor:
             verbose:            Enable verbose yt-dlp output
             get_comments:       Fetch comments for each video during full extraction
             comments_max:       Cap on number of comments to keep per video
+            include_detailed_formats: Include per-format stream details in metadata
         """
         self.search_limit     = search_limit
         self.top_n            = top_n
@@ -107,6 +109,7 @@ class PipelineExtractor:
         self.verbose          = verbose
         self.get_comments     = get_comments
         self.comments_max     = comments_max
+        self.include_detailed_formats = include_detailed_formats
         self._searcher        = SearchExtractor(max_results=search_limit, verbose=verbose)
 
     def run(self, query: str) -> dict:
@@ -139,7 +142,10 @@ class PipelineExtractor:
         # Step 3: Full metadata for top N — fetched concurrently (independent requests)
         top = filtered[: self.top_n]
         videos: list[dict | None] = [None] * len(top)
-        extractor = VideoExtractor(verbose=self.verbose)
+        extractor = VideoExtractor(
+            verbose=self.verbose,
+            include_detailed_formats=self.include_detailed_formats,
+        )
 
         def _fetch(index_candidate: tuple[int, dict]) -> tuple[int, dict]:
             i, candidate = index_candidate
