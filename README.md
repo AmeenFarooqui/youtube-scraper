@@ -1,6 +1,6 @@
 # YouTube Scraper — Claude Code Skill
 
-A production-grade YouTube metadata extractor and scraper built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, and batches of URLs. Downloading is **never** the default behavior.
+A production-grade YouTube metadata extractor and scraper built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
 
 ---
 
@@ -9,11 +9,17 @@ A production-grade YouTube metadata extractor and scraper built with Python and 
 - **Searches YouTube by keyword** and returns ranked results with full metadata
 - **Feeds YouTube URLs into NotebookLM** via `--urls-only` — the primary research workflow
 - Extracts **deep metadata** from any public YouTube video: stats, formats, subtitles, chapters, heatmap data, channel info, and more
+- **Scrapes entire channels** across videos, Shorts, and live stream tabs
+- Fetches **comments** and runs **VADER sentiment analysis** on them
+- Enriches results with **dislike counts** from the Return YouTube Dislike API
+- **Filters and sorts** by views, likes, dislikes, subscribers, duration, date, or sentiment ratio
 - Analyzes **entire playlists** with summary statistics
 - Processes **batches of URLs** from a text file, concurrently
-- Checks **subtitle/caption availability** across all languages
+- Caches metadata in **SQLite** to avoid redundant network requests
+- Tracks failures persistently in a **JSONL failure log**
 - Optionally **downloads video (MP4) or audio (MP3)** when explicitly requested
 - Outputs to **JSON** (default), **CSV**, or **Markdown report**
+- Ships with a **Docker image** for zero-install deployment
 
 ---
 
@@ -21,10 +27,18 @@ A production-grade YouTube metadata extractor and scraper built with Python and 
 
 | Feature | Details |
 |---------|---------|
-| **YouTube search** | Search by keyword, filter by views/duration/age, get ranked results |
+| **YouTube search** | Search by keyword, filter by views/duration/age/likes/subs, get ranked results |
 | **NotebookLM pipeline** | `--urls-only` outputs clean URLs for piping into `notebooklm source add` |
 | **Pipeline mode** | Search → filter → fetch full metadata for top N results |
-| Single video metadata | 30+ fields including stats, formats, subtitles |
+| **Channel scraper** | Scrape `/videos`, `/shorts`, `/streams`, or all tabs via `--channel` |
+| **Comments** | Fetch top comments with `--comments` |
+| **Dislike counts** | Estimated dislikes via Return YouTube Dislike API (`--dislikes`) |
+| **Sentiment analysis** | VADER-based positive/negative/neutral breakdown on comments (`--sentiment`) |
+| **Sorting** | Sort results by views, likes, dislikes, subscribers, date, duration, or sentiment ratio |
+| **Engagement filters** | Filter by min/max likes, dislikes, subscribers, positive ratio, negative ratio |
+| **SQLite cache** | Metadata cached 24h per video ID — avoids redundant fetches |
+| **Failure tracking** | Permanent JSONL log of every failed URL with error classification |
+| Single video metadata | 30+ fields including stats, formats, subtitles, Shorts detection |
 | Playlist analysis | Total duration, avg length, view totals, date range |
 | Batch processing | Concurrent, fault-tolerant, continues on failures |
 | Subtitle extraction | Lists available languages, optionally downloads .srt/.vtt |
@@ -32,31 +46,46 @@ A production-grade YouTube metadata extractor and scraper built with Python and 
 | Output formats | JSON, CSV, Markdown report, URLs-only |
 | Error handling | Classifies: deleted, private, age-restricted, geo-blocked |
 | Terminal UI | Rich colored output with tables and panels |
+| Docker | `docker compose up` — no local Python setup required |
 
 ---
 
 ## Installation
 
-### Prerequisites
+### Option A: Docker (recommended — zero setup)
+
+```bash
+cd ~/.claude/skills/youtube-scraper
+docker compose up --build
+```
+
+Outputs land in `./outputs/`, cache in a named Docker volume.
+
+To run a one-off command:
+```bash
+docker compose run --rm scraper python youtube_scraper.py --search "topic" --search-limit 10
+```
+
+### Option B: Local Python
+
+#### Prerequisites
 
 - Python 3.10+
 - pip
 
-### Step 1: Create a virtual environment (recommended)
+#### Step 1: Create a virtual environment (recommended)
 
 ```bash
-# Create a virtual environment in the skill directory
 cd ~/.claude/skills/youtube-scraper
 python3 -m venv venv
 
-# Activate it
 # Linux/Mac:
 source venv/bin/activate
 # Windows:
 venv\Scripts\activate
 ```
 
-### Step 2: Install Python dependencies
+#### Step 2: Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -66,11 +95,12 @@ This installs:
 - `yt-dlp` — the core YouTube data engine
 - `rich` — colored terminal output with tables
 - `tqdm` — progress bars for batch operations
-- `pandas` — available for future data analysis
+- `pandas` — available for data analysis
+- `vaderSentiment` — lexicon-based comment sentiment analysis
 
-### Step 3: Install ffmpeg (optional, required for downloads)
+#### Step 3: Install ffmpeg (optional, required for downloads)
 
-ffmpeg is a separate tool (not a Python package) needed for:
+ffmpeg is needed for:
 - Converting audio to MP3 (`--download-audio`)
 - Merging best video+audio streams (`--download-video`)
 
@@ -81,17 +111,10 @@ sudo apt install ffmpeg
 # macOS
 brew install ffmpeg
 
-# Windows
-# Download from https://ffmpeg.org/download.html
-# Add ffmpeg.exe to your PATH
+# Windows — download from https://ffmpeg.org/download.html, add to PATH
 ```
 
-Verify installation:
-```bash
-ffmpeg -version
-```
-
-### Step 4: Verify yt-dlp
+#### Step 4: Verify
 
 ```bash
 python3 -c "import yt_dlp; print('yt-dlp version:', yt_dlp.version.__version__)"
@@ -106,6 +129,8 @@ All commands run from the `scripts/` directory, or pass the full path:
 ```bash
 cd ~/.claude/skills/youtube-scraper/scripts
 ```
+
+---
 
 ### Search YouTube by keyword
 
@@ -136,6 +161,8 @@ python youtube_scraper.py \
 
 This outputs one YouTube URL per line — nothing else. Pipe directly into `notebooklm source add`.
 
+---
+
 ### NotebookLM Research Pipeline
 
 The recommended end-to-end workflow:
@@ -158,6 +185,122 @@ notebooklm generate infographic "Summary" --notebook NOTEBOOK_ID --orientation p
 > **Never use `--subtitles` to feed NotebookLM.** Pass the YouTube URL directly to
 > `notebooklm source add` — NotebookLM fetches and indexes the transcript itself.
 
+---
+
+### Channel scraping
+
+Scrape a channel's video tab:
+```bash
+python youtube_scraper.py --channel "https://www.youtube.com/@channelname"
+```
+
+Specify which tab (`videos`, `shorts`, `streams`, `all`):
+```bash
+python youtube_scraper.py --channel "https://www.youtube.com/@channelname" --channel-tab shorts
+python youtube_scraper.py --channel "https://www.youtube.com/@channelname" --channel-tab all
+```
+
+Limit results and save:
+```bash
+python youtube_scraper.py \
+  --channel "https://www.youtube.com/@channelname" \
+  --channel-tab videos \
+  --search-limit 50 \
+  --output channel.json
+```
+
+---
+
+### Comments
+
+Fetch top comments for a video:
+```bash
+python youtube_scraper.py --url "URL" --comments
+```
+
+Control how many:
+```bash
+python youtube_scraper.py --url "URL" --comments --comment-limit 100
+```
+
+---
+
+### Dislike counts (Return YouTube Dislike API)
+
+Enrich results with estimated dislikes:
+```bash
+python youtube_scraper.py --url "URL" --dislikes
+```
+
+Works in search and batch modes too:
+```bash
+python youtube_scraper.py --search "topic" --search-limit 10 --dislikes
+```
+
+---
+
+### Sentiment analysis on comments
+
+Run VADER sentiment on fetched comments:
+```bash
+python youtube_scraper.py --url "URL" --comments --sentiment
+```
+
+Returns `positive_pct`, `negative_pct`, `neutral_pct`, `compound_avg`, `total_analyzed` in the output.
+
+---
+
+### Sorting results
+
+Sort by any engagement metric:
+```bash
+# Sort search results by view count (descending, default)
+python youtube_scraper.py --search "topic" --search-limit 20 --sort-by views
+
+# Sort by like count, ascending
+python youtube_scraper.py --search "topic" --search-limit 20 --sort-by likes --sort-order asc
+
+# Sort by estimated dislikes (requires --dislikes)
+python youtube_scraper.py --search "topic" --dislikes --sort-by dislikes
+
+# Sort by positive comment ratio (requires --comments --sentiment)
+python youtube_scraper.py --search "topic" --comments --sentiment --sort-by positive_ratio
+```
+
+Available sort fields: `views`, `likes`, `dislikes`, `subscribers`, `date`, `duration`, `positive_ratio`, `negative_ratio`
+
+---
+
+### Engagement filters
+
+Filter by subscriber count:
+```bash
+python youtube_scraper.py \
+  --search "topic" \
+  --filter-min-subscribers 100000 \
+  --filter-max-subscribers 5000000
+```
+
+Filter by like count:
+```bash
+python youtube_scraper.py --search "topic" --filter-min-likes 1000
+```
+
+Filter by dislike count (requires `--dislikes`):
+```bash
+python youtube_scraper.py --search "topic" --dislikes --filter-max-dislikes 500
+```
+
+Filter by comment sentiment ratio (requires `--comments --sentiment`, values 0.0–1.0):
+```bash
+python youtube_scraper.py \
+  --search "topic" \
+  --comments --sentiment \
+  --filter-min-positive-ratio 0.7
+```
+
+---
+
 ### Pipeline mode (search → filter → full metadata)
 
 ```bash
@@ -170,8 +313,9 @@ python youtube_scraper.py \
   --urls-only
 ```
 
-`--pipeline` fetches full metadata for the top results after filtering, so you can inspect
-quality before sending to NotebookLM.
+`--pipeline` fetches full metadata for the top results after filtering, so you can inspect quality before sending to NotebookLM.
+
+---
 
 ### Single video (default JSON output)
 
@@ -235,6 +379,18 @@ With concurrent workers (default: 3):
 python youtube_scraper.py --batch urls.txt --workers 5
 ```
 
+Log failures to a file:
+```bash
+python youtube_scraper.py --batch urls.txt --failure-log failures.jsonl
+```
+
+### Cache control
+
+Results are cached in SQLite for 24 hours by default. To bypass:
+```bash
+python youtube_scraper.py --url "URL" --no-cache
+```
+
 ### Check subtitle availability
 
 ```bash
@@ -295,6 +451,11 @@ python youtube_scraper.py --url "URL" --verbose
   "view_count_formatted": "1.50B",
   "like_count_formatted": "15.00M",
   "comment_count_formatted": "2.50M",
+  "dislike_count": 42000,
+  "dislike_count_formatted": "42.00K",
+  "dislike_count_estimated": true,
+  "is_short": false,
+  "content_type": "video",
   "tags": ["rick astley", "never gonna give you up"],
   "categories": ["Music"],
   "language": "en",
@@ -302,6 +463,13 @@ python youtube_scraper.py --url "URL" --verbose
   "availability": "public",
   "live_status": "not_live",
   "has_chapters": false,
+  "sentiment_summary": {
+    "positive_pct": 72.4,
+    "negative_pct": 8.1,
+    "neutral_pct": 19.5,
+    "compound_avg": 0.61,
+    "total_analyzed": 100
+  },
   "formats_summary": {
     "total_formats": 20,
     "video_only_count": 8,
@@ -323,54 +491,145 @@ python youtube_scraper.py --url "URL" --verbose
 
 ---
 
+## CLI Reference
+
+### Core flags
+
+| Flag | Description |
+|------|-------------|
+| `--url URL` | Single video metadata |
+| `--search "query"` | Search YouTube by keyword |
+| `--search-limit N` | Max search results (default: 10) |
+| `--playlist URL` | Playlist analysis |
+| `--full-playlist` | Fetch full metadata per video (slow) |
+| `--batch FILE` | Batch URLs from a text file |
+| `--channel URL` | Scrape a channel |
+| `--channel-tab TAB` | `videos` / `shorts` / `streams` / `all` (default: videos) |
+| `--workers N` | Concurrent workers for batch (default: 3, min: 1) |
+
+### Enrichment flags
+
+| Flag | Description |
+|------|-------------|
+| `--comments` | Fetch top comments |
+| `--comment-limit N` | Max comments to fetch (default: 20) |
+| `--dislikes` | Enrich with Return YouTube Dislike API |
+| `--sentiment` | Run VADER sentiment on comments (requires `--comments`) |
+| `--subtitles` | Check subtitle/caption availability |
+| `--download-subs` | Download subtitle files |
+| `--subtitle-lang LANG` | Language code (default: en) |
+| `--subtitle-format FMT` | `srt` / `vtt` (default: srt) |
+
+### Sorting flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--sort-by FIELD` | — | Sort field: `views`, `likes`, `dislikes`, `subscribers`, `date`, `duration`, `positive_ratio`, `negative_ratio` |
+| `--sort-order ORDER` | `desc` | `asc` or `desc` |
+
+### Filter flags
+
+| Flag | Description |
+|------|-------------|
+| `--filter-min-views N` | Minimum view count |
+| `--filter-max-views N` | Maximum view count |
+| `--filter-min-duration SECS` | Minimum duration in seconds |
+| `--filter-max-duration SECS` | Maximum duration in seconds |
+| `--filter-max-age-days N` | Only videos uploaded within N days |
+| `--filter-min-likes N` | Minimum like count |
+| `--filter-max-likes N` | Maximum like count |
+| `--filter-min-dislikes N` | Minimum dislike count (requires `--dislikes`) |
+| `--filter-max-dislikes N` | Maximum dislike count (requires `--dislikes`) |
+| `--filter-min-subscribers N` | Minimum channel subscriber count |
+| `--filter-max-subscribers N` | Maximum channel subscriber count |
+| `--filter-min-positive-ratio R` | Min positive comment ratio 0.0–1.0 (requires `--comments --sentiment`) |
+| `--filter-min-negative-ratio R` | Min negative comment ratio 0.0–1.0 (requires `--comments --sentiment`) |
+
+### Output flags
+
+| Flag | Description |
+|------|-------------|
+| `--output FILE` | Save output to file (.json, .csv, .md, .txt) |
+| `--csv` | Export as CSV |
+| `--report` | Generate Markdown report |
+| `--urls-only` | Output only URLs, one per line |
+| `--pipeline` | After search, fetch full metadata for top results |
+| `--pipeline-top N` | How many results to fully extract (default: 3) |
+| `--no-cache` | Bypass SQLite cache |
+| `--failure-log FILE` | Append failed URLs to a JSONL file |
+| `--verbose` | Show yt-dlp debug output |
+
+### Download flags
+
+| Flag | Description |
+|------|-------------|
+| `--download-audio` | Download audio only |
+| `--audio-format FMT` | `mp3` / `m4a` / `wav` / `flac` / `aac` (default: mp3) |
+| `--download-video` | Download video |
+| `--video-format FMT` | `mp4` / `mkv` / `webm` (default: mp4) |
+| `--download-dir DIR` | Download destination (default: `outputs/`) |
+
+---
+
 ## Project Architecture
 
-Understanding how the code is organized:
-
 ```
-scripts/
-├── youtube_scraper.py      # ENTRY POINT — CLI, routing, output
-├── config.py               # All settings and defaults in one place
+youtube-scraper/
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
 │
-├── extractor/              # DATA FETCHING layer (yt-dlp wrappers)
-│   ├── video_extractor.py     # Single video metadata
-│   ├── playlist_extractor.py  # Playlist + per-video data
-│   ├── subtitle_extractor.py  # Subtitle availability + download
-│   └── downloader.py          # File downloads (video/audio)
-│
-├── formatter/              # OUTPUT RENDERING layer
-│   ├── json_formatter.py      # JSON serialization + file writing
-│   ├── csv_formatter.py       # Flat CSV export
-│   └── markdown_formatter.py  # Human-readable Markdown reports
-│
-├── reports/
-│   └── report_generator.py    # Glue: orchestrates extraction + formatting + terminal display
-│
-└── utils/                  # SHARED UTILITIES
-    ├── logger.py              # Centralized logging (rich + file)
-    ├── validators.py          # URL validation, batch file validation
-    ├── helpers.py             # Pure functions: format numbers, dates, durations
-    └── error_handler.py       # Custom exceptions, yt-dlp error classification
+└── scripts/
+    ├── youtube_scraper.py      # ENTRY POINT — CLI, routing, output
+    ├── config.py               # All settings and defaults in one place
+    │
+    ├── extractor/              # DATA FETCHING layer (yt-dlp wrappers)
+    │   ├── video_extractor.py     # Single video metadata
+    │   ├── playlist_extractor.py  # Playlist + per-video data
+    │   ├── channel_extractor.py   # Channel tab scraping (videos/shorts/streams/all)
+    │   ├── subtitle_extractor.py  # Subtitle availability + download
+    │   └── downloader.py          # File downloads (video/audio)
+    │
+    ├── formatter/              # OUTPUT RENDERING layer
+    │   ├── json_formatter.py      # JSON serialization + file writing
+    │   ├── csv_formatter.py       # Flat CSV export
+    │   └── markdown_formatter.py  # Human-readable Markdown reports
+    │
+    ├── reports/
+    │   └── report_generator.py    # Glue: orchestrates extraction + formatting + terminal display
+    │
+    ├── cache/                  # SQLITE CACHE layer
+    │   └── cache_manager.py       # 24h TTL cache, lazy eviction, mode 0o700
+    │
+    └── utils/                  # SHARED UTILITIES
+        ├── logger.py              # Centralized logging (rich + file)
+        ├── validators.py          # URL validation, batch file validation
+        ├── helpers.py             # Pure functions: format numbers, dates, durations
+        ├── error_handler.py       # Custom exceptions, yt-dlp error classification
+        ├── failure_tracker.py     # JSONL failure log with permanent/transient classification
+        ├── ryd_client.py          # Return YouTube Dislike API client (stdlib urllib only)
+        └── sentiment_analyzer.py  # VADER comment sentiment analysis
 ```
 
 **Data flow:**
 ```
 User runs CLI
-     ↓
+     |
 youtube_scraper.py (parse args, route)
-     ↓
-extractor/*.py (call yt-dlp → shape data)
-     ↓
-formatter/*.py (render data → JSON/CSV/Markdown)
-     ↓
+     |
+cache/cache_manager.py (check SQLite — return hit or proceed)
+     |
+extractor/*.py (call yt-dlp => shape data)
+     |
+utils/ryd_client.py (optional — enrich with dislike counts)
+utils/sentiment_analyzer.py (optional — VADER on comments)
+     |
+_apply_engagement_filters() + _apply_sort()
+     |
+formatter/*.py (render => JSON/CSV/Markdown)
+     |
 Output to terminal or file
 ```
-
-**Why this separation?**
-- Each layer has one job and doesn't know about the others
-- You can swap formatters without touching extractors
-- Easy to add new extractors (e.g., channel_extractor.py) without changing existing code
-- Utils are reusable everywhere without circular imports
 
 ---
 
@@ -414,7 +673,7 @@ The scraper catches and classifies errors automatically:
 | `NetworkError` | Connection failed | Check internet connection |
 | `RateLimitedError` | Too many requests | Wait and retry |
 
-For batch runs: failed URLs are recorded in the output but don't stop processing.
+For batch runs: failed URLs are recorded in the output and optionally written to `--failure-log`. Processing continues regardless.
 
 ---
 
@@ -453,6 +712,12 @@ No network calls are made in tests — all use mock data.
 pip install yt-dlp
 ```
 
+### "Module not found: vaderSentiment"
+```bash
+pip install vaderSentiment
+```
+Sentiment analysis is optional — it's skipped gracefully if the package is absent.
+
 ### "ffmpeg not found" during download
 Install ffmpeg (see Installation section). Metadata extraction works fine without ffmpeg.
 
@@ -471,22 +736,28 @@ pip install -U yt-dlp
 ```
 YouTube's internal APIs change frequently. Keeping yt-dlp up to date is important.
 
+### Dislike counts show `null`
+The Return YouTube Dislike API may be unavailable or the video may be too new. Failures are silent — the rest of the metadata is unaffected.
+
 ---
 
 ## Future Roadmap
 
-Suggested next improvements:
-
 | Feature | Status | Complexity | Value |
 |---------|--------|-----------|-------|
-| YouTube search integration | ✅ Done | — | — |
-| NotebookLM pipeline (`--urls-only`) | ✅ Done | — | — |
-| Pipeline mode with filters | ✅ Done | — | — |
-| Channel extractor | Pending | Medium | High |
-| SQLite storage | Pending | Medium | High |
+| YouTube search integration | Done | — | — |
+| NotebookLM pipeline (`--urls-only`) | Done | — | — |
+| Pipeline mode with filters | Done | — | — |
+| Channel extractor (`--channel`, `--channel-tab`) | Done | — | — |
+| SQLite metadata cache | Done | — | — |
+| Comment extraction (`--comments`) | Done | — | — |
+| Sentiment analysis on comments (`--sentiment`) | Done | — | — |
+| Dislike counts via RYD API (`--dislikes`) | Done | — | — |
+| Engagement filtering + sorting | Done | — | — |
+| Failure tracking (`--failure-log`) | Done | — | — |
+| Docker support | Done | — | — |
 | Transcript text extraction | Pending | Low | High |
 | Keyword/topic extraction (NLP) | Pending | Medium | Medium |
-| Sentiment analysis on comments | Pending | High | Medium |
 | FastAPI REST API wrapper | Pending | Medium | High |
 | Streamlit web UI | Pending | Medium | Medium |
 | HTML report output | Pending | Low | Medium |
@@ -505,6 +776,8 @@ This tool:
 - Never uses authentication or cookies by default
 - Does not bypass any protections
 - Respects YouTube's public data access
+- Cache directory is created with mode `0o700` (owner-only access)
+- Video IDs are URL-encoded before being sent to external APIs
 - Is intended for research, analysis, and content discovery
 
 Do not use this to mass-download copyrighted content or violate YouTube's Terms of Service.
