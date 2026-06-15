@@ -30,6 +30,7 @@ def get_logger(name: str = "youtube_scraper", log_file: str | None = None, verbo
         A configured logging.Logger ready to use
     """
     logger = logging.getLogger(name)
+    level = logging.DEBUG if verbose else logging.INFO
 
     # Avoid adding duplicate handlers if this logger was already set up
     # Always update the level so --verbose takes effect even after module-level init
@@ -37,7 +38,6 @@ def get_logger(name: str = "youtube_scraper", log_file: str | None = None, verbo
         logger.setLevel(level)
         return logger
 
-    level = logging.DEBUG if verbose else logging.INFO
     logger.setLevel(level)
 
     # ── Terminal handler ──────────────────────────────────────────────────────
