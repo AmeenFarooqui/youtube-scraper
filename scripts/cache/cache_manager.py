@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -68,13 +69,14 @@ class CacheManager:
         self.ttl = ttl
         self._db_path = self.cache_dir / "metadata.db"
         self._conn: sqlite3.Connection | None = None
+        self._lock = threading.Lock()
 
     # ── Internal ──────────────────────────────────────────────────────────────
 
     def _connect(self) -> sqlite3.Connection:
         if self._conn is None:
             self.cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-            self._conn = sqlite3.connect(str(self._db_path))
+            self._conn = sqlite3.connect(str(self._db_path), check_same_thread=False)
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.commit()
         return self._conn
@@ -87,56 +89,61 @@ class CacheManager:
 
         Expired entries are deleted on access (lazy eviction).
         """
-        conn = self._connect()
-        row = conn.execute(
-            "SELECT fetched_at, data FROM videos WHERE id = ?", (video_id,)
-        ).fetchone()
+        with self._lock:
+            conn = self._connect()
+            row = conn.execute(
+                "SELECT fetched_at, data FROM videos WHERE id = ?", (video_id,)
+            ).fetchone()
 
-        if row is None:
-            return None
+            if row is None:
+                return None
 
-        fetched_at, data_json = row
-        if time.time() - fetched_at > self.ttl:
-            # Entry expired — evict and report miss
-            conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
-            conn.commit()
-            return None
+            fetched_at, data_json = row
+            if time.time() - fetched_at > self.ttl:
+                # Entry expired — evict and report miss
+                conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+                conn.commit()
+                return None
 
-        return json.loads(data_json)
+            return json.loads(data_json)
 
     def put(self, video_id: str, url: str, data: dict) -> None:
         """Store (or replace) metadata for video_id."""
-        conn = self._connect()
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO videos (id, url, fetched_at, data)
-            VALUES (?, ?, ?, ?)
-            """,
-            (video_id, url, time.time(), json.dumps(data, ensure_ascii=False)),
-        )
-        conn.commit()
+        with self._lock:
+            conn = self._connect()
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO videos (id, url, fetched_at, data)
+                VALUES (?, ?, ?, ?)
+                """,
+                (video_id, url, time.time(), json.dumps(data, ensure_ascii=False)),
+            )
+            conn.commit()
 
     def invalidate(self, video_id: str) -> None:
         """Force-expire a single cached entry."""
-        conn = self._connect()
-        conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
-        conn.commit()
+        with self._lock:
+            conn = self._connect()
+            conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+            conn.commit()
 
     def clear(self) -> int:
         """Remove all cached entries. Returns the count removed."""
-        conn = self._connect()
-        cursor = conn.execute("DELETE FROM videos")
-        conn.commit()
-        return cursor.rowcount
+        with self._lock:
+            conn = self._connect()
+            cursor = conn.execute("DELETE FROM videos")
+            conn.commit()
+            return cursor.rowcount
 
     def stats(self) -> dict:
         """Return a summary of cache state."""
-        conn = self._connect()
-        total   = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
-        expired = conn.execute(
-            "SELECT COUNT(*) FROM videos WHERE fetched_at < ?",
-            (time.time() - self.ttl,),
-        ).fetchone()[0]
+        with self._lock:
+            conn = self._connect()
+            total   = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
+            expired = conn.execute(
+                "SELECT COUNT(*) FROM videos WHERE fetched_at < ?",
+                (time.time() - self.ttl,),
+            ).fetchone()[0]
         size_bytes = self._db_path.stat().st_size if self._db_path.exists() else 0
         return {
             "db_path":        str(self._db_path),
@@ -149,9 +156,10 @@ class CacheManager:
 
     def close(self) -> None:
         """Close the database connection."""
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
 
     def __enter__(self):
         return self

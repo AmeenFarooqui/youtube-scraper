@@ -629,8 +629,8 @@ def handle_video(args: argparse.Namespace) -> dict:
     """Handle single video metadata extraction (with cache + optional comments)."""
     url = args.url
 
-    if not is_valid_youtube_url(url):
-        logger.error(f"Not a valid YouTube URL: {url}")
+    if detect_url_type(url) != "video":
+        logger.error(f"--url requires a single video URL (got: {url})")
         sys.exit(1)
 
     get_comments = getattr(args, "comments", False)
@@ -643,6 +643,10 @@ def handle_video(args: argparse.Namespace) -> dict:
             cached = cache.get(video_id)
             if cached:
                 logger.info(f"Cache hit for {video_id} — skipping network fetch")
+                if getattr(args, "dislikes", False):
+                    cached = _enrich_dislikes_single(cached)
+                if getattr(args, "sentiment", False):
+                    cached = _enrich_sentiment_single(cached)
                 return cached
 
     extractor = VideoExtractor(verbose=args.verbose)
@@ -985,14 +989,14 @@ def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> li
     if min_pos is not None:
         items = [
             i for i in items
-            if (s := i.get("sentiment_summary")) and s.get("positive_pct", 0) >= min_pos
+            if (s := i.get("sentiment_summary")) and s.get("positive_pct", 0) >= min_pos * 100
         ]
 
     min_neg = getattr(args, "filter_min_negative_ratio", None)
     if min_neg is not None:
         items = [
             i for i in items
-            if (s := i.get("sentiment_summary")) and s.get("negative_pct", 0) >= min_neg
+            if (s := i.get("sentiment_summary")) and s.get("negative_pct", 0) >= min_neg * 100
         ]
 
     return items

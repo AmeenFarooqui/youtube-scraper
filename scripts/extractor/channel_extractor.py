@@ -142,9 +142,10 @@ class ChannelExtractor:
                 result = self._extract_tab(base_url, tab)
                 videos = result.get("videos", [])
                 # Re-number positions across tabs
-                for v in videos:
+                base = len(all_videos)
+                for idx, v in enumerate(videos):
                     v["tab"] = tab
-                    v["position"] = len(all_videos) + videos.index(v) + 1
+                    v["position"] = base + idx + 1
                 all_videos.extend(videos)
                 errors.extend(result.get("errors", []))
                 tab_summaries[tab] = {

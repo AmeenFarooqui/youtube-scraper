@@ -792,16 +792,6 @@ The field `"dislike_count_estimated": true` in the output marks this.
 
 ---
 
-### `--filter-min-positive-ratio` requires percentage, not decimal
-
-The `sentiment_summary` field stores `positive_pct` as a **percentage** (e.g. `72.4` means 72.4%), but the filter argument also expects a percentage:
-
-```bash
---filter-min-positive-ratio 70   # keep videos where 70%+ of comments are positive
-```
-
-Not `0.70`. If you pass `0.70`, it will match almost everything (0.7% threshold).
-
 ---
 
 ## Troubleshooting

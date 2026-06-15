@@ -82,11 +82,20 @@ class JsonFormatter:
         return data
 
     def _clean_dict(self, d: dict) -> dict:
-        """Remove verbose raw fields from a single metadata dict."""
-        # Fields to drop from single-video output
+        """Remove verbose raw fields from a metadata dict, recursing into nested structures."""
         FIELDS_TO_DROP = {
             "formats_raw",
             "thumbnails_all",
         }
 
-        return {k: v for k, v in d.items() if k not in FIELDS_TO_DROP}
+        result = {}
+        for k, v in d.items():
+            if k in FIELDS_TO_DROP:
+                continue
+            if isinstance(v, dict):
+                result[k] = self._clean_dict(v)
+            elif isinstance(v, list):
+                result[k] = [self._clean_dict(i) if isinstance(i, dict) else i for i in v]
+            else:
+                result[k] = v
+        return result

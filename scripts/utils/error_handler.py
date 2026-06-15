@@ -96,7 +96,12 @@ _ERROR_PATTERNS: list[tuple[str, type[ScraperError], str]] = [
         "This video is private and cannot be accessed.",
     ),
     (
-        "age",
+        "age-restricted",
+        AgeRestrictedError,
+        "This video is age-restricted. Authentication would be required.",
+    ),
+    (
+        "age restricted",
         AgeRestrictedError,
         "This video is age-restricted. Authentication would be required.",
     ),
@@ -126,7 +131,12 @@ _ERROR_PATTERNS: list[tuple[str, type[ScraperError], str]] = [
         "This video does not exist.",
     ),
     (
-        "rate",
+        "rate limit",
+        RateLimitedError,
+        "YouTube is rate-limiting requests. Try again later or add a delay.",
+    ),
+    (
+        "too many requests",
         RateLimitedError,
         "YouTube is rate-limiting requests. Try again later or add a delay.",
     ),

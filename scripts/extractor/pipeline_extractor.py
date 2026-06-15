@@ -208,7 +208,9 @@ class PipelineExtractor:
             if self.min_views is not None and view_count is not None:
                 if view_count < self.min_views:
                     continue
-            if self.max_age_days is not None and upload_date:
+            if self.max_age_days is not None:
+                if not upload_date:
+                    continue  # No date — can't verify age, exclude (fail-closed)
                 try:
                     uploaded = datetime.strptime(str(upload_date), "%Y%m%d").replace(
                         tzinfo=timezone.utc
@@ -216,7 +218,7 @@ class PipelineExtractor:
                     if (today - uploaded).days > self.max_age_days:
                         continue
                 except (ValueError, TypeError):
-                    pass  # Unparseable date — include by default
+                    continue  # Unparseable date — exclude (fail-closed)
 
             filtered.append(r)
 

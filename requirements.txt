@@ -7,9 +7,6 @@ rich>=13.0.0
 # Progress bars for batch operations
 tqdm>=4.66.0
 
-# Data manipulation for CSV exports and analysis
-pandas>=2.0.0
-
 # Sentiment analysis for YouTube comments (VADER — tuned for social media text)
 vaderSentiment>=3.3.2
 
