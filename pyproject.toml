@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "youtube-scraper"
+version = "1.0.0"
+description = "Python CLI to scrape YouTube video metadata, comments, sentiment, subtitles, channels, and playlists — powered by yt-dlp. No API key required."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = [
+    "youtube",
+    "scraper",
+    "yt-dlp",
+    "metadata",
+    "comments",
+    "sentiment-analysis",
+    "channel",
+    "playlist",
+    "subtitles",
+    "cli",
+    "data-extraction",
+    "youtube-downloader",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "yt-dlp>=2024.1.0",
+    "rich>=13.0.0",
+    "tqdm>=4.65.0",
+    "pandas>=2.0.0",
+    "vaderSentiment>=3.3.2",
+]
+
+[project.urls]
+Homepage = "https://github.com/AmeenFarooqui/youtube-scraper"
+Repository = "https://github.com/AmeenFarooqui/youtube-scraper.git"
+"Bug Tracker" = "https://github.com/AmeenFarooqui/youtube-scraper/issues"
+
+[project.scripts]
+youtube-scraper = "scripts.youtube_scraper:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["scripts*"]

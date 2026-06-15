@@ -1,6 +1,8 @@
-# YouTube Scraper — Claude Code Skill
+# YouTube Scraper
 
-A production-grade YouTube metadata extractor and scraper built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
+> Python CLI to scrape YouTube video metadata, comments, subtitles, channels, and playlists — powered by **yt-dlp**. No API key required.
+
+A production-grade YouTube metadata extractor built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
 
 ---
 
