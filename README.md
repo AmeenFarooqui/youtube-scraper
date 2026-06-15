@@ -2,6 +2,28 @@
 
 > Python CLI to scrape YouTube video metadata, comments, subtitles, channels, and playlists — powered by **yt-dlp**. No API key required.
 
+## Quickstart
+
+```bash
+git clone https://github.com/AmeenFarooqui/youtube-scraper.git
+cd youtube-scraper
+pip install -r requirements.txt
+
+# Search YouTube
+python scripts/youtube_scraper.py --search "your topic" --search-limit 10
+
+# Single video metadata
+python scripts/youtube_scraper.py --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+```
+
+Or with Docker (zero setup):
+```bash
+docker compose up --build
+docker compose run --rm scraper python youtube_scraper.py --search "your topic"
+```
+
+---
+
 A production-grade YouTube metadata extractor built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
 
 ---
@@ -57,7 +79,7 @@ A production-grade YouTube metadata extractor built with Python and **yt-dlp**. 
 ### Option A: Docker (recommended — zero setup)
 
 ```bash
-cd ~/.claude/skills/youtube-scraper
+cd youtube-scraper
 docker compose up --build
 ```
 
@@ -78,7 +100,7 @@ docker compose run --rm scraper python youtube_scraper.py --search "topic" --sea
 #### Step 1: Create a virtual environment (recommended)
 
 ```bash
-cd ~/.claude/skills/youtube-scraper
+cd youtube-scraper
 python3 -m venv venv
 
 # Linux/Mac:
@@ -129,7 +151,7 @@ python3 -c "import yt_dlp; print('yt-dlp version:', yt_dlp.version.__version__)"
 All commands run from the `scripts/` directory, or pass the full path:
 
 ```bash
-cd ~/.claude/skills/youtube-scraper/scripts
+cd youtube-scraper/scripts
 ```
 
 ---
@@ -682,7 +704,7 @@ For batch runs: failed URLs are recorded in the output and optionally written to
 ## Running Tests
 
 ```bash
-cd ~/.claude/skills/youtube-scraper/scripts
+cd youtube-scraper/scripts
 
 # Run all tests
 python -m pytest tests/ -v
