@@ -706,7 +706,26 @@ def handle_playlist(args: argparse.Namespace) -> dict:
         max_videos=args.max_videos,
         verbose=args.verbose,
     )
-    return extractor.extract(url)
+    result = extractor.extract(url)
+
+    if result.get("videos"):
+        items = result["videos"]
+        items = _apply_shorts_filter(items, args)
+        if getattr(args, "dislikes", False):
+            items = _enrich_dislikes(items)
+        if getattr(args, "sentiment", False):
+            analyzer = SentimentAnalyzer()
+            for item in items:
+                if item.get("comments"):
+                    summary = analyzer.analyze(item["comments"])
+                    if summary:
+                        item["sentiment_summary"] = summary
+        items = _apply_engagement_filters(items, args)
+        items = _apply_sort(items, args)
+        result["videos"] = items
+        result["total_videos"] = len(items)
+
+    return result
 
 
 def handle_batch(args: argparse.Namespace) -> list[dict]:
@@ -1115,8 +1134,18 @@ def handle_channel(args: argparse.Namespace) -> dict:
     if result.get("videos"):
         items = result["videos"]
         items = _apply_shorts_filter(items, args)
+        if getattr(args, "comments", False):
+            logger.info(f"Fetching full metadata + comments for {len(items)} channel videos...")
+            items = _fetch_full_metadata(items, args)
         if getattr(args, "dislikes", False):
             items = _enrich_dislikes(items)
+        if getattr(args, "sentiment", False):
+            analyzer = SentimentAnalyzer()
+            for item in items:
+                if item.get("comments"):
+                    summary = analyzer.analyze(item["comments"])
+                    if summary:
+                        item["sentiment_summary"] = summary
         items = _apply_engagement_filters(items, args)
         items = _apply_sort(items, args)
         result["videos"] = items
@@ -1579,6 +1608,18 @@ def main() -> None:
         _val = getattr(args, _count_arg, None)
         if _val is not None and _val < 1:
             parser.error(f"{_flag} must be >= 1, got {_val}")
+    if getattr(args, "filter_min_views", None) is not None and args.filter_min_views < 0:
+        parser.error("--filter-min-views must be >= 0")
+    if getattr(args, "filter_max_age_days", None) is not None and args.filter_max_age_days < 1:
+        parser.error("--filter-max-age-days must be >= 1")
+    _min_dur = getattr(args, "filter_min_duration", None)
+    _max_dur = getattr(args, "filter_max_duration", None)
+    if _min_dur is not None and _min_dur < 0:
+        parser.error("--filter-min-duration must be >= 0")
+    if _max_dur is not None and _max_dur < 0:
+        parser.error("--filter-max-duration must be >= 0")
+    if _min_dur is not None and _max_dur is not None and _min_dur > _max_dur:
+        parser.error(f"--filter-min-duration ({_min_dur}) must be <= --filter-max-duration ({_max_dur})")
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)
