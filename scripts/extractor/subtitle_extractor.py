@@ -184,11 +184,11 @@ class SubtitleExtractor:
             if not downloaded:
                 import re
                 vid_match = re.search(
-                    r'[?&]v=([A-Za-z0-9_-]{11})|/(?:shorts|embed|v)/([A-Za-z0-9_-]{11})',
+                    r'youtu\.be/([A-Za-z0-9_-]{11})|[?&]v=([A-Za-z0-9_-]{11})|/(?:shorts|embed|v)/([A-Za-z0-9_-]{11})',
                     url,
                 )
                 if vid_match:
-                    video_id = vid_match.group(1) or vid_match.group(2)
+                    video_id = vid_match.group(1) or vid_match.group(2) or vid_match.group(3)
                     for path in self.output_dir.iterdir():
                         ext = path.suffix.lstrip(".")
                         if ext in ("srt", "vtt", "ass", "ttml") and f"[{video_id}]" in path.name:

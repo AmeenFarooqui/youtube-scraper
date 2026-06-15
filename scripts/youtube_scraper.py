@@ -1685,6 +1685,8 @@ def main() -> None:
         _val = getattr(args, _count_arg, None)
         if _val is not None and _val < 1:
             parser.error(f"{_flag} must be >= 1, got {_val}")
+    if args.cache_ttl <= 0:
+        parser.error(f"--cache-ttl must be > 0, got {args.cache_ttl}")
     if getattr(args, "filter_min_views", None) is not None and args.filter_min_views < 0:
         parser.error("--filter-min-views must be >= 0")
     if getattr(args, "filter_max_views", None) is not None and args.filter_max_views < 0:

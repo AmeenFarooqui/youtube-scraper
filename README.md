@@ -24,7 +24,7 @@ docker compose run --rm scraper --search "your topic"
 
 ---
 
-A production-grade YouTube metadata extractor built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
+A feature-complete YouTube metadata extractor built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
 
 ---
 

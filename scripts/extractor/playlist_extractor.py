@@ -282,18 +282,18 @@ class PlaylistExtractor:
                 "upload_dates": [],
             }
 
-        # Duration stats — skip videos where duration is unknown
-        durations = [v["duration"] for v in videos if v.get("duration")]
+        # Duration stats — skip videos where duration is unknown (None), but include 0
+        durations = [v["duration"] for v in videos if v.get("duration") is not None]
         total_duration = sum(durations) if durations else 0
         avg_duration = total_duration / len(durations) if durations else 0
 
         # Find shortest and longest by duration
-        videos_with_duration = [v for v in videos if v.get("duration")]
+        videos_with_duration = [v for v in videos if v.get("duration") is not None]
         shortest = min(videos_with_duration, key=lambda v: v["duration"], default=None)
         longest = max(videos_with_duration, key=lambda v: v["duration"], default=None)
 
-        # View count totals
-        views = [v["view_count"] for v in videos if v.get("view_count")]
+        # View count totals — include 0 views (new/unlisted videos)
+        views = [v["view_count"] for v in videos if v.get("view_count") is not None]
         total_views = sum(views) if views else 0
 
         # Upload dates for frequency analysis
