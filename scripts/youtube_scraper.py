@@ -1071,6 +1071,12 @@ def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> li
 
     min_pos = getattr(args, "filter_min_positive_ratio", None)
     if min_pos is not None:
+        _no_sent = sum(1 for i in items if not i.get("sentiment_summary"))
+        if _no_sent:
+            logger.warning(
+                f"--filter-min-positive-ratio: {_no_sent} item(s) have no sentiment data "
+                "(no comments fetched?) and will be excluded"
+            )
         items = [
             i for i in items
             if (s := i.get("sentiment_summary")) and s.get("positive_pct", 0) >= min_pos
@@ -1078,6 +1084,12 @@ def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> li
 
     min_neg = getattr(args, "filter_min_negative_ratio", None)
     if min_neg is not None:
+        _no_sent = sum(1 for i in items if not i.get("sentiment_summary"))
+        if _no_sent:
+            logger.warning(
+                f"--filter-min-negative-ratio: {_no_sent} item(s) have no sentiment data "
+                "(no comments fetched?) and will be excluded"
+            )
         items = [
             i for i in items
             if (s := i.get("sentiment_summary")) and s.get("negative_pct", 0) >= min_neg
@@ -1666,6 +1678,24 @@ def main() -> None:
         parser.error("--filter-max-likes must be >= 0")
     if getattr(args, "filter_max_subscribers", None) is not None and args.filter_max_subscribers < 0:
         parser.error("--filter-max-subscribers must be >= 0")
+    if getattr(args, "filter_min_likes", None) is not None and args.filter_min_likes < 0:
+        parser.error("--filter-min-likes must be >= 0")
+    if getattr(args, "filter_min_subscribers", None) is not None and args.filter_min_subscribers < 0:
+        parser.error("--filter-min-subscribers must be >= 0")
+    if getattr(args, "filter_min_dislikes", None) is not None and args.filter_min_dislikes < 0:
+        parser.error("--filter-min-dislikes must be >= 0")
+    if getattr(args, "filter_max_dislikes", None) is not None and args.filter_max_dislikes < 0:
+        parser.error("--filter-max-dislikes must be >= 0")
+    for _vmin_attr, _vmax_attr, _flag_min, _flag_max in [
+        ("filter_min_views",       "filter_max_views",       "--filter-min-views",       "--filter-max-views"),
+        ("filter_min_likes",       "filter_max_likes",       "--filter-min-likes",       "--filter-max-likes"),
+        ("filter_min_subscribers", "filter_max_subscribers", "--filter-min-subscribers", "--filter-max-subscribers"),
+        ("filter_min_dislikes",    "filter_max_dislikes",    "--filter-min-dislikes",    "--filter-max-dislikes"),
+    ]:
+        _vmin = getattr(args, _vmin_attr, None)
+        _vmax = getattr(args, _vmax_attr, None)
+        if _vmin is not None and _vmax is not None and _vmin > _vmax:
+            parser.error(f"{_flag_min} ({_vmin}) must be <= {_flag_max} ({_vmax})")
     if args.search and not getattr(args, "pipeline", False):
         _flat_stub_filters = [
             ("filter_min_likes",       "--filter-min-likes"),
@@ -1766,9 +1796,13 @@ def main() -> None:
         # ── Output ────────────────────────────────────────────────────────────
         handle_output(result, args, gen)
 
-        # Exit non-zero when every batch URL failed (no successful extractions)
+        # Exit non-zero when every batch URL / search-batch / pipeline-batch failed
         if args.batch and isinstance(result, list) and result and all(r.get("error") for r in result):
             sys.exit(1)
+        if getattr(args, "search_batch", None) and isinstance(result, dict):
+            _queries = result.get("queries", [])
+            if _queries and all(q.get("error") for q in _queries):
+                sys.exit(1)
 
     except ScraperError as e:
         # Typed errors from our classification system

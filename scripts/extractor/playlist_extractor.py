@@ -225,6 +225,12 @@ class PlaylistExtractor:
             "description": g("description"),
             "is_short": is_short,
             "content_type": "short" if is_short else "video",
+            # Extended fields: populated in full-details mode, None in flat mode
+            "channel_id": g("channel_id"),
+            "channel_url": g("channel_url") or g("uploader_url"),
+            "channel_follower_count": g("channel_follower_count"),
+            "age_limit": g("age_limit"),
+            "language": g("language"),
         }
 
     def _compute_summary(self, videos: list[dict]) -> dict:

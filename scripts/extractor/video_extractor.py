@@ -309,7 +309,9 @@ class VideoExtractor:
         best_video = None
         best_height = -1
         best_fps = -1
+        best_codec = -1
         best_tbr = -1
+        best_hdr = -1
         available_extensions = set()
 
         for fmt in formats:
@@ -356,10 +358,23 @@ class VideoExtractor:
                     tbr = float(tbr)
                 except (TypeError, ValueError):
                     tbr = -1
-                if (height, fps, tbr) > (best_height, best_fps, best_tbr):
+                vcodec = (fmt.get("vcodec") or "").lower()
+                if vcodec.startswith("av01"):
+                    codec_score = 3
+                elif vcodec.startswith(("vp9", "vp09")):
+                    codec_score = 2
+                elif vcodec.startswith(("avc1", "h264")):
+                    codec_score = 1
+                else:
+                    codec_score = 0
+                dynamic_range = (fmt.get("dynamic_range") or "").upper()
+                hdr_score = 1 if dynamic_range in ("HDR10", "HDR10+", "HLG", "DOLBY_VISION") else 0
+                if (height, fps, codec_score, tbr, hdr_score) > (best_height, best_fps, best_codec, best_tbr, best_hdr):
                     best_height = height
                     best_fps = fps
+                    best_codec = codec_score
                     best_tbr = tbr
+                    best_hdr = hdr_score
                     best_video = entry or self._format_entry(fmt)
 
         summary = {

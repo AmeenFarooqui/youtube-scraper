@@ -87,7 +87,7 @@ Outputs land in `./outputs/`, cache in a named Docker volume.
 
 To run a one-off command:
 ```bash
-docker compose run --rm scraper python youtube_scraper.py --search "topic" --search-limit 10
+docker compose run --rm scraper --search "topic" --search-limit 10
 ```
 
 ### Option B: Local Python

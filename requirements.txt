@@ -1,5 +1,5 @@
 # Core dependency — the YouTube data engine
-yt-dlp>=2024.1.1
+yt-dlp>=2024.1.1,<2027
 
 # Rich terminal output (colored tables, progress bars, panels)
 rich>=13.0.0
