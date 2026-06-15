@@ -226,7 +226,7 @@ class SubtitleExtractor:
         for lang, formats in manual_subs.items():
             if isinstance(formats, list):
                 manual_details[lang] = [
-                    {"ext": f.get("ext"), "url": f.get("url")}
+                    {"ext": f.get("ext")}
                     for f in formats
                     if isinstance(f, dict)
                 ]
@@ -235,7 +235,7 @@ class SubtitleExtractor:
         for lang, formats in auto_subs.items():
             if isinstance(formats, list):
                 auto_details[lang] = [
-                    {"ext": f.get("ext"), "url": f.get("url")}
+                    {"ext": f.get("ext")}
                     for f in formats
                     if isinstance(f, dict)
                 ]

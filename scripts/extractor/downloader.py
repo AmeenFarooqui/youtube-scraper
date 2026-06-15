@@ -184,7 +184,7 @@ class Downloader:
                 pass
 
         return {
-            "success": True,
+            "success": primary_file is not None,
             "mode": mode,
             "format": file_format,
             "url": url,

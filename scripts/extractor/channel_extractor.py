@@ -29,6 +29,7 @@ from __future__ import annotations
 import re
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from utils.logger import get_logger
@@ -131,30 +132,68 @@ class ChannelExtractor:
         return result
 
     def _extract_all_tabs(self, base_url: str) -> dict:
-        """Fetch videos, shorts, and streams then merge into one result."""
+        """Fetch videos, shorts, and streams concurrently then merge into one result."""
         tabs = ["videos", "shorts", "streams"]
-        all_videos: list[dict] = []
-        tab_summaries: dict[str, dict] = {}
+        tab_results: dict[str, dict | None] = {}
         errors: list[dict] = []
 
-        for tab in tabs:
+        def _fetch_tab(tab: str) -> tuple[str, dict | None]:
             try:
-                result = self._extract_tab(base_url, tab)
-                videos = result.get("videos", [])
-                # Re-number positions across tabs
-                base = len(all_videos)
-                for idx, v in enumerate(videos):
-                    v["tab"] = tab
-                    v["position"] = base + idx + 1
-                all_videos.extend(videos)
-                errors.extend(result.get("errors", []))
-                tab_summaries[tab] = {
-                    "available_videos": result.get("available_videos", 0),
-                    "unavailable_videos": result.get("unavailable_videos", 0),
-                }
+                url = _tab_url(base_url, tab)
+                logger.info(f"Fetching tab URL: {url}")
+                # Disable per-tab limit — max_videos applied globally after merge
+                extractor = PlaylistExtractor(
+                    full_details=self.full_details,
+                    max_videos=None,
+                    verbose=self.verbose,
+                )
+                result = extractor.extract(url)
+                result["channel_url"] = base_url
+                result["tab"] = tab
+                result["tabs_fetched"] = [tab]
+                result["_extractor"] = "ChannelExtractor"
+                return tab, result
             except ScraperError as e:
                 logger.warning(f"Tab {tab!r} failed: {e.user_message}")
-                tab_summaries[tab] = {"error": e.user_message}
+                return tab, None
+
+        with ThreadPoolExecutor(max_workers=len(tabs)) as executor:
+            future_to_tab = {executor.submit(_fetch_tab, tab): tab for tab in tabs}
+            for future in as_completed(future_to_tab):
+                tab, result = future.result()
+                tab_results[tab] = result
+
+        all_videos: list[dict] = []
+        tab_summaries: dict[str, dict] = {}
+        seen_ids: set[str] = set()
+
+        for tab in tabs:
+            result = tab_results.get(tab)
+            if result is None:
+                tab_summaries[tab] = {"error": "fetch failed"}
+                continue
+            videos = result.get("videos", [])
+            errors.extend(result.get("errors", []))
+            tab_summaries[tab] = {
+                "available_videos": result.get("available_videos", 0),
+                "unavailable_videos": result.get("unavailable_videos", 0),
+            }
+            for v in videos:
+                vid_id = v.get("id") or v.get("video_id") or v.get("url")
+                if vid_id and vid_id in seen_ids:
+                    continue
+                if vid_id:
+                    seen_ids.add(vid_id)
+                v["tab"] = tab
+                all_videos.append(v)
+
+        # Apply max_videos globally after dedup (not per-tab)
+        if self.max_videos is not None:
+            all_videos = all_videos[: self.max_videos]
+
+        # Re-number positions after dedup and limit
+        for idx, v in enumerate(all_videos):
+            v["position"] = idx + 1
 
         return {
             "channel_url": base_url,

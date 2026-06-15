@@ -112,8 +112,8 @@ class MarkdownFormatter:
             lines.append("| # | Title | Channel | Duration | Views | Upload Date |")
             lines.append("|---|-------|---------|----------|-------|-------------|")
             for i, r in enumerate(successful, 1):
-                title = (r.get("title") or "Unknown")[:60]
-                channel = (r.get("channel") or "Unknown")[:30]
+                title = (r.get("title") or "Unknown")[:60].replace("|", "\\|").replace("\n", " ")
+                channel = (r.get("channel") or "Unknown")[:30].replace("|", "\\|").replace("\n", " ")
                 duration = r.get("duration_string", "N/A")
                 views = format_number(r.get("view_count"))
                 date = r.get("upload_date_formatted", "Unknown")
@@ -289,7 +289,7 @@ class MarkdownFormatter:
             "|---|-------|-------|",
         ]
         for i, ch in enumerate(chapters, 1):
-            ch_title = ch.get("title") or f"Chapter {i}"
+            ch_title = (ch.get("title") or f"Chapter {i}").replace("|", "\\|").replace("\n", " ")
             start = seconds_to_hms(ch.get("start_time", 0))
             lines.append(f"| {i} | {ch_title} | {start} |")
 
@@ -365,7 +365,7 @@ class MarkdownFormatter:
 
         for v in videos:
             pos = v.get("position", "?")
-            title = (v.get("title") or "Unknown")[:60]
+            title = (v.get("title") or "Unknown")[:60].replace("|", "\\|").replace("\n", " ")
             url = v.get("url") or ""
             duration = v.get("duration_string", "N/A")
             views = format_number(v.get("view_count"))

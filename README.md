@@ -487,9 +487,9 @@ python youtube_scraper.py --url "URL" --verbose
   "live_status": "not_live",
   "has_chapters": false,
   "sentiment_summary": {
-    "positive_pct": 72.4,
-    "negative_pct": 8.1,
-    "neutral_pct": 19.5,
+    "positive_pct": 0.724,
+    "negative_pct": 0.081,
+    "neutral_pct": 0.195,
     "compound_avg": 0.61,
     "total_analyzed": 100
   },

@@ -331,9 +331,9 @@ Examples:
         action="store_true",
         dest="full_playlist",
         help=(
-            "Fetch complete metadata for each video in the playlist "
-            "(slow — makes one network request per video). "
-            "Default is fast flat mode (title/duration only)."
+            "Fetch extended metadata per video via individual requests (slow). "
+            "Includes more fields than flat mode, but not the full single-video schema. "
+            "Default: flat mode (title/duration/views only)."
         ),
     )
     playlist_group.add_argument(
@@ -711,8 +711,11 @@ def handle_playlist(args: argparse.Namespace) -> dict:
     if result.get("videos"):
         items = result["videos"]
         items = _apply_shorts_filter(items, args)
+        if getattr(args, "comments", False):
+            logger.info(f"Fetching full metadata + comments for {len(items)} playlist videos...")
+            items = _fetch_full_metadata(items, args)
         if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items)
+            items = _enrich_dislikes(items, workers=args.workers)
         if getattr(args, "sentiment", False):
             analyzer = SentimentAnalyzer()
             for item in items:
@@ -844,7 +847,7 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
 
     # Post-processing: enrich, filter, sort
     if getattr(args, "dislikes", False):
-        items = _enrich_dislikes(items)
+        items = _enrich_dislikes(items, workers=args.workers)
 
     if getattr(args, "sentiment", False):
         sentiment_analyzer = SentimentAnalyzer()
@@ -899,7 +902,7 @@ def _read_query_file(path: str) -> list[str]:
     """Read one search query per line from a text file, skipping blanks and # comments."""
     try:
         with open(path, encoding="utf-8") as f:
-            queries = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+            queries = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
     except OSError as e:
         logger.error(f"Cannot read file {path}: {e}")
         sys.exit(1)
@@ -945,12 +948,23 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
     _verbose = args.verbose
     detailed_formats = getattr(args, "detailed_formats", False)
     results: list[dict | None] = [None] * len(stubs)
+    # Use cache only when not fetching comments/formats (those aren't cached in stubs)
+    cache = _make_cache(args) if not get_comments and not detailed_formats else None
 
     def _fetch(index_stub: tuple[int, dict]) -> tuple[int, dict]:
         i, stub = index_stub
         url = stub.get("url") or stub.get("webpage_url")
         if not url:
             return i, stub
+
+        if cache:
+            video_id = extract_video_id(url)
+            if video_id:
+                cached = cache.get(video_id)
+                if cached:
+                    logger.debug(f"Cache hit (full-meta): {video_id}")
+                    return i, cached
+
         extractor = VideoExtractor(
             verbose=_verbose,
             include_detailed_formats=detailed_formats,
@@ -960,6 +974,10 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
             if get_comments and data.get("comments"):
                 data["comments"] = data["comments"][:max_c]
                 data["comments_fetched"] = len(data["comments"])
+            if cache:
+                video_id = extract_video_id(url) or data.get("id")
+                if video_id:
+                    cache.put(video_id, url, data)
             return i, data
         except ScraperError as e:
             logger.warning(f"Failed full fetch for {url}: {e.user_message}")
@@ -1138,7 +1156,7 @@ def handle_channel(args: argparse.Namespace) -> dict:
             logger.info(f"Fetching full metadata + comments for {len(items)} channel videos...")
             items = _fetch_full_metadata(items, args)
         if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items)
+            items = _enrich_dislikes(items, workers=args.workers)
         if getattr(args, "sentiment", False):
             analyzer = SentimentAnalyzer()
             for item in items:
@@ -1163,27 +1181,13 @@ def handle_search(args: argparse.Namespace) -> dict:
         items = result["results"]
         items = _apply_shorts_filter(items, args)
 
-        # Warn when like/subscriber filters are active — flat search stubs lack these fields
-        _stub_filter_flags = [
-            (getattr(args, "filter_min_likes", None), "--filter-min-likes"),
-            (getattr(args, "filter_max_likes", None), "--filter-max-likes"),
-            (getattr(args, "filter_min_subscribers", None), "--filter-min-subscribers"),
-            (getattr(args, "filter_max_subscribers", None), "--filter-max-subscribers"),
-        ]
-        _active_stub_flags = [n for v, n in _stub_filter_flags if v is not None]
-        if _active_stub_flags:
-            logger.warning(
-                f"{', '.join(_active_stub_flags)} may exclude all results: flat search stubs "
-                "lack like_count and channel_follower_count. Use --pipeline to get full metadata."
-            )
-
         # If comments are requested, upgrade stubs to full metadata (stubs have no like_count/comments)
         if getattr(args, "comments", False):
             logger.info(f"Fetching full metadata + comments for {len(items)} search results...")
             items = _fetch_full_metadata(items, args)
 
         if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items)
+            items = _enrich_dislikes(items, workers=args.workers)
 
         if getattr(args, "sentiment", False):
             analyzer = SentimentAnalyzer()
@@ -1233,7 +1237,7 @@ def handle_search_batch(args: argparse.Namespace) -> dict:
         if getattr(args, "comments", False):
             items = _fetch_full_metadata(items, args)
         if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items)
+            items = _enrich_dislikes(items, workers=args.workers)
         if analyzer:
             for item in items:
                 if item.get("comments"):
@@ -1255,7 +1259,7 @@ def handle_pipeline(args: argparse.Namespace) -> dict:
     if result.get("videos"):
         items = result["videos"]
         if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items)
+            items = _enrich_dislikes(items, workers=args.workers)
         if getattr(args, "sentiment", False):
             analyzer = SentimentAnalyzer()
             for item in items:
@@ -1317,7 +1321,7 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
             continue
         items = result["videos"]
         if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items)
+            items = _enrich_dislikes(items, workers=args.workers)
         if analyzer:
             for item in items:
                 if item.get("comments"):
@@ -1604,6 +1608,8 @@ def main() -> None:
     # ── Fast-fail: incompatible flag combinations ─────────────────────────────
     if getattr(args, "download_video", False) and getattr(args, "download_audio", False):
         parser.error("--download-video and --download-audio are mutually exclusive. Use one at a time.")
+    if getattr(args, "subtitles", False) and (getattr(args, "download_video", False) or getattr(args, "download_audio", False)):
+        parser.error("--subtitles cannot be combined with --download-video or --download-audio. Use separate commands.")
     if args.search and args.subtitles:
         parser.error("--search and --subtitles are incompatible. Subtitles require a single video URL (use --url).")
     if args.search and args.url:
@@ -1654,6 +1660,25 @@ def main() -> None:
             parser.error(f"{_flag} must be >= 1, got {_val}")
     if getattr(args, "filter_min_views", None) is not None and args.filter_min_views < 0:
         parser.error("--filter-min-views must be >= 0")
+    if getattr(args, "filter_max_views", None) is not None and args.filter_max_views < 0:
+        parser.error("--filter-max-views must be >= 0")
+    if getattr(args, "filter_max_likes", None) is not None and args.filter_max_likes < 0:
+        parser.error("--filter-max-likes must be >= 0")
+    if getattr(args, "filter_max_subscribers", None) is not None and args.filter_max_subscribers < 0:
+        parser.error("--filter-max-subscribers must be >= 0")
+    if args.search and not getattr(args, "pipeline", False):
+        _flat_stub_filters = [
+            ("filter_min_likes",       "--filter-min-likes"),
+            ("filter_max_likes",       "--filter-max-likes"),
+            ("filter_min_subscribers", "--filter-min-subscribers"),
+            ("filter_max_subscribers", "--filter-max-subscribers"),
+        ]
+        for _attr, _flag in _flat_stub_filters:
+            if getattr(args, _attr, None) is not None:
+                parser.error(
+                    f"{_flag} requires --pipeline in search mode: flat search stubs lack "
+                    "like_count and channel_follower_count. Add --pipeline to get full metadata."
+                )
     if getattr(args, "filter_max_age_days", None) is not None and args.filter_max_age_days < 1:
         parser.error("--filter-max-age-days must be >= 1")
     _min_dur = getattr(args, "filter_min_duration", None)

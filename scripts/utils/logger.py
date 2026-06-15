@@ -32,7 +32,9 @@ def get_logger(name: str = "youtube_scraper", log_file: str | None = None, verbo
     logger = logging.getLogger(name)
 
     # Avoid adding duplicate handlers if this logger was already set up
+    # Always update the level so --verbose takes effect even after module-level init
     if logger.handlers:
+        logger.setLevel(level)
         return logger
 
     level = logging.DEBUG if verbose else logging.INFO

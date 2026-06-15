@@ -213,8 +213,8 @@ def is_youtube_short(url: str | None, duration: int | None = None) -> bool:
     Detect if a video is a YouTube Short.
 
     Primary signal:  URL contains '/shorts/' (reliable)
-    Secondary signal: duration <= 60 seconds (heuristic — not 100% accurate,
-                      but covers cases where the URL doesn't include /shorts/)
+    Secondary signal: duration <= 60 seconds (heuristic — may misclassify short
+                      normal videos; only applied when URL-based detection fails)
     """
     if url and "/shorts/" in str(url):
         return True

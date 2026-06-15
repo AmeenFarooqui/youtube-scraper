@@ -66,7 +66,7 @@ class CsvFormatter:
         """
         videos = playlist_data.get("videos", [])
         if not videos:
-            return "No videos found"
+            return self._to_csv([])
         return self.format_many(videos)
 
     def save(self, data: dict | list, path: str | Path) -> Path:
