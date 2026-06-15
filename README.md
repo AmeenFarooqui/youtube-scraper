@@ -705,6 +705,85 @@ No network calls are made in tests — all use mock data.
 
 ---
 
+## Known Limitations
+
+### Comments cannot be used with `--search` or `--pipeline`
+
+`--comments` is blocked when `--search` is used. This is because search results are lightweight stubs — yt-dlp does not fetch full per-video metadata (including comments) during a search pass.
+
+**This will fail:**
+```bash
+# ERROR: --comments is not supported with --search
+python youtube_scraper.py --search "web scraper tutorial" --comments --sentiment
+```
+
+**Workaround — two steps:**
+
+Step 1: Get URLs from search/pipeline:
+```bash
+python youtube_scraper.py \
+  --search "web scraper tutorial python" \
+  --search-limit 20 \
+  --pipeline \
+  --pipeline-top 10 \
+  --filter-min-views 5000 \
+  --urls-only \
+  --output top_videos.txt
+```
+
+Step 2: Batch those URLs with comments + dislikes + sentiment:
+```bash
+python youtube_scraper.py \
+  --batch top_videos.txt \
+  --dislikes \
+  --comments \
+  --sentiment \
+  --filter-min-likes 500 \
+  --filter-max-dislikes 500 \
+  --sort-by positive_ratio \
+  --output results.json
+```
+
+This gives you videos ranked by most-positive comment sentiment, with low-quality videos filtered out.
+
+---
+
+### Like count is missing from search results
+
+Search results are stubs — `like_count` is often `None`. Filters like `--filter-min-likes` will silently drop all results because the field doesn't exist in search stubs.
+
+**Fix:** Use `--pipeline` to fetch full metadata before filtering. Pipeline mode makes one full yt-dlp call per top result, so `like_count` is populated.
+
+```bash
+python youtube_scraper.py \
+  --search "topic" \
+  --pipeline \
+  --pipeline-top 10 \
+  --filter-min-likes 1000   # only works reliably with --pipeline
+```
+
+---
+
+### Dislike counts are estimates, not official
+
+YouTube removed public dislike counts in November 2021. The `--dislikes` flag fetches crowdsourced estimates from [returnyoutubedislikeapi.com](https://returnyoutubedislikeapi.com). These are approximations based on extension users and ML modeling — treat them as directional signals, not exact figures.
+
+The field `"dislike_count_estimated": true` in the output marks this.
+
+---
+
+### `--filter-min-positive-ratio` requires percentage, not decimal
+
+The `sentiment_summary` field stores `positive_pct` as a **percentage** (e.g. `72.4` means 72.4%), but the filter argument also expects a percentage:
+
+```bash
+--filter-min-positive-ratio 70   # keep videos where 70%+ of comments are positive
+```
+
+Not `0.70`. If you pass `0.70`, it will match almost everything (0.7% threshold).
+
+---
+
 ## Troubleshooting
 
 ### "Module not found: yt_dlp"
