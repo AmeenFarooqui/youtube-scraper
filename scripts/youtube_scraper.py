@@ -844,7 +844,49 @@ def _build_pipeline(args: argparse.Namespace) -> PipelineExtractor:
         output_dir=args.download_dir,
         workers=args.workers,
         verbose=args.verbose,
+        get_comments=getattr(args, "comments", False),
+        comments_max=getattr(args, "comments_max", 500),
     )
+
+
+def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[dict]:
+    """
+    Re-fetch full video metadata for a list of search stubs.
+
+    Search results are lightweight stubs — they lack like_count, comments, and
+    other per-video data. This function upgrades each stub to a full metadata dict
+    by making one VideoExtractor call per item, concurrently.
+
+    Used automatically when --comments is set with --search (without --pipeline).
+    Falls back to the original stub if the full fetch fails.
+    """
+    extractor = VideoExtractor(verbose=args.verbose)
+    get_comments = getattr(args, "comments", False)
+    max_c = getattr(args, "comments_max", 500)
+    results: list[dict | None] = [None] * len(stubs)
+
+    def _fetch(index_stub: tuple[int, dict]) -> tuple[int, dict]:
+        i, stub = index_stub
+        url = stub.get("url") or stub.get("webpage_url")
+        if not url:
+            return i, stub
+        try:
+            data = extractor.extract(url, get_comments=get_comments)
+            if get_comments and data.get("comments"):
+                data["comments"] = data["comments"][:max_c]
+                data["comments_fetched"] = len(data["comments"])
+            return i, data
+        except ScraperError as e:
+            logger.warning(f"Failed full fetch for {url}: {e.user_message}")
+            return i, stub  # fall back to original stub
+
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {executor.submit(_fetch, (i, s)): i for i, s in enumerate(stubs)}
+        for future in as_completed(futures):
+            i, result = future.result()
+            results[i] = result
+
+    return [r for r in results if r is not None]
 
 
 def _enrich_dislikes(items: list[dict]) -> list[dict]:
@@ -1019,8 +1061,23 @@ def handle_search(args: argparse.Namespace) -> dict:
     if result.get("results"):
         items = result["results"]
         items = _apply_shorts_filter(items, args)
+
+        # If comments are requested, upgrade stubs to full metadata (stubs have no like_count/comments)
+        if getattr(args, "comments", False):
+            logger.info(f"Fetching full metadata + comments for {len(items)} search results...")
+            items = _fetch_full_metadata(items, args)
+
         if getattr(args, "dislikes", False):
             items = _enrich_dislikes(items)
+
+        if getattr(args, "sentiment", False):
+            analyzer = SentimentAnalyzer()
+            for item in items:
+                if item.get("comments"):
+                    summary = analyzer.analyze(item["comments"])
+                    if summary:
+                        item["sentiment_summary"] = summary
+
         items = _apply_engagement_filters(items, args)
         items = _apply_sort(items, args)
         result["results"] = items
@@ -1056,7 +1113,24 @@ def handle_search_batch(args: argparse.Namespace) -> dict:
 
 def handle_pipeline(args: argparse.Namespace) -> dict:
     """Handle search → filter → full-extract pipeline for a single query."""
-    return _build_pipeline(args).run(args.search)
+    result = _build_pipeline(args).run(args.search)
+
+    if result.get("videos"):
+        items = result["videos"]
+        if getattr(args, "dislikes", False):
+            items = _enrich_dislikes(items)
+        if getattr(args, "sentiment", False):
+            analyzer = SentimentAnalyzer()
+            for item in items:
+                if item.get("comments"):
+                    summary = analyzer.analyze(item["comments"])
+                    if summary:
+                        item["sentiment_summary"] = summary
+        items = _apply_engagement_filters(items, args)
+        items = _apply_sort(items, args)
+        result["videos"] = items
+
+    return result
 
 
 def handle_pipeline_batch(args: argparse.Namespace) -> dict:
@@ -1360,8 +1434,6 @@ def main() -> None:
         parser.error("--search and --url are mutually exclusive. Use one input mode at a time.")
     if args.batch and args.search:
         parser.error("--batch and --search are mutually exclusive. --batch takes a file of URLs; --search takes a keyword.")
-    if getattr(args, "comments", False) and args.search:
-        parser.error("--comments is not supported with --search (use --url or --batch instead).")
     if getattr(args, "sentiment", False) and not getattr(args, "comments", False):
         parser.error("--sentiment requires --comments to be enabled.")
     if getattr(args, "filter_min_dislikes", None) is not None and not getattr(args, "dislikes", False):

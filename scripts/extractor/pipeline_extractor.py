@@ -75,6 +75,8 @@ class PipelineExtractor:
         output_dir: Path | str = DEFAULT_OUTPUT_DIR,
         workers: int = MAX_WORKERS,
         verbose: bool = False,
+        get_comments: bool = False,
+        comments_max: int = 500,
     ):
         """
         Args:
@@ -89,6 +91,8 @@ class PipelineExtractor:
             output_dir:         Where to save subtitle files when extracting transcripts
             workers:            Max concurrent yt-dlp requests (caps pipeline concurrency)
             verbose:            Enable verbose yt-dlp output
+            get_comments:       Fetch comments for each video during full extraction
+            comments_max:       Cap on number of comments to keep per video
         """
         self.search_limit     = search_limit
         self.top_n            = top_n
@@ -101,6 +105,8 @@ class PipelineExtractor:
         self.output_dir       = Path(output_dir)
         self.workers          = workers
         self.verbose          = verbose
+        self.get_comments     = get_comments
+        self.comments_max     = comments_max
         self._searcher        = SearchExtractor(max_results=search_limit, verbose=verbose)
 
     def run(self, query: str) -> dict:
@@ -141,12 +147,17 @@ class PipelineExtractor:
             if not url:
                 return i, None
             try:
-                metadata = extractor.extract(url)
+                metadata = extractor.extract(url, get_comments=self.get_comments)
             except ScraperError as e:
                 logger.warning(f"Skipping {url}: {e.user_message}")
                 error_entry = format_error_for_report(e)
                 error_entry["url"] = url
                 return i, error_entry
+
+            # Cap comments list if fetched
+            if self.get_comments and metadata.get("comments"):
+                metadata["comments"] = metadata["comments"][: self.comments_max]
+                metadata["comments_fetched"] = len(metadata["comments"])
 
             # Step 4: Optionally extract transcript
             metadata["transcript"] = (

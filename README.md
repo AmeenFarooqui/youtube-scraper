@@ -707,44 +707,40 @@ No network calls are made in tests — all use mock data.
 
 ## Known Limitations
 
-### Comments cannot be used with `--search` or `--pipeline`
+### `--search --comments` fetches full metadata per result (slower)
 
-`--comments` is blocked when `--search` is used. This is because search results are lightweight stubs — yt-dlp does not fetch full per-video metadata (including comments) during a search pass.
+When `--comments` is combined with `--search`, the scraper automatically upgrades each search stub to full metadata by making one additional yt-dlp call per video. This is necessary because search results are lightweight stubs that don't include comments or like counts.
 
-**This will fail:**
+This means the one-command version works, but is slower than a plain search:
+
 ```bash
-# ERROR: --comments is not supported with --search
-python youtube_scraper.py --search "web scraper tutorial" --comments --sentiment
-```
-
-**Workaround — two steps:**
-
-Step 1: Get URLs from search/pipeline:
-```bash
+# Works — fetches full metadata + comments for all 10 results concurrently
 python youtube_scraper.py \
   --search "web scraper tutorial python" \
-  --search-limit 20 \
-  --pipeline \
-  --pipeline-top 10 \
-  --filter-min-views 5000 \
-  --urls-only \
-  --output top_videos.txt
-```
-
-Step 2: Batch those URLs with comments + dislikes + sentiment:
-```bash
-python youtube_scraper.py \
-  --batch top_videos.txt \
+  --search-limit 10 \
   --dislikes \
   --comments \
   --sentiment \
-  --filter-min-likes 500 \
-  --filter-max-dislikes 500 \
   --sort-by positive_ratio \
   --output results.json
 ```
 
-This gives you videos ranked by most-positive comment sentiment, with low-quality videos filtered out.
+For large search limits, use `--pipeline` with `--pipeline-top` to limit full fetches to only the top N after filtering:
+
+```bash
+# More efficient: search 20, filter by views, fully extract top 5 with comments
+python youtube_scraper.py \
+  --search "web scraper tutorial python" \
+  --search-limit 20 \
+  --pipeline \
+  --pipeline-top 5 \
+  --filter-min-views 5000 \
+  --dislikes \
+  --comments \
+  --sentiment \
+  --sort-by positive_ratio \
+  --output results.json
+```
 
 ---
 
