@@ -243,7 +243,7 @@ python youtube_scraper.py --url "URL" --comments
 
 Control how many:
 ```bash
-python youtube_scraper.py --url "URL" --comments --comment-limit 100
+python youtube_scraper.py --url "URL" --comments --comments-max 100
 ```
 
 ---
@@ -535,7 +535,7 @@ python youtube_scraper.py --url "URL" --verbose
 | Flag | Description |
 |------|-------------|
 | `--comments` | Fetch top comments |
-| `--comment-limit N` | Max comments to fetch (default: 20) |
+| `--comments-max N` | Max comments to include in output (default: 500) |
 | `--dislikes` | Enrich with Return YouTube Dislike API |
 | `--sentiment` | Run VADER sentiment on comments (requires `--comments`) |
 | `--subtitles` | Check subtitle/caption availability |

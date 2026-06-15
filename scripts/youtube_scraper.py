@@ -700,9 +700,12 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
 
     logger.info(message)
 
-    if args.max_videos:
-        urls = urls[:args.max_videos]
-        logger.info(f"Limited to {args.max_videos} URLs")
+    # Pre-filter: drop non-video URLs before dedup/limit so they don't consume slots
+    _all_urls = urls
+    urls = [u for u in _all_urls if detect_url_type(u) == "video"]
+    _skipped = len(_all_urls) - len(urls)
+    if _skipped:
+        logger.warning(f"Skipped {_skipped} non-video URL(s) in batch (playlists/channels not supported)")
 
     # Deduplicate by video ID, preserving order
     seen_ids: set[str] = set()
@@ -716,6 +719,10 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
     if len(deduped) < len(urls):
         logger.info(f"Removed {len(urls) - len(deduped)} duplicate URL(s)")
     urls = deduped
+
+    if args.max_videos:
+        urls = urls[:args.max_videos]
+        logger.info(f"Limited to {args.max_videos} URLs")
 
     results: list[dict] = [None] * len(urls)
 
@@ -1286,7 +1293,7 @@ def _extract_urls(data: dict | list) -> list[str]:
                     if u := _u(item):
                         urls.append(u)
         elif _ext == "PlaylistExtractor":
-            for v in data.get("entries", []):
+            for v in data.get("videos", []):
                 if v and (u := _u(v)):
                     urls.append(u)
         else:
@@ -1472,6 +1479,15 @@ def main() -> None:
         _val = getattr(args, _ratio_arg, None)
         if _val is not None and not (0.0 <= _val <= 1.0):
             parser.error(f"--{_ratio_arg.replace('_', '-')} must be between 0.0 and 1.0, got {_val}")
+    for _count_arg, _flag in (
+        ("search_limit", "--search-limit"),
+        ("pipeline_top", "--pipeline-top"),
+        ("comments_max", "--comments-max"),
+        ("max_videos", "--max-videos"),
+    ):
+        _val = getattr(args, _count_arg, None)
+        if _val is not None and _val < 1:
+            parser.error(f"{_flag} must be >= 1, got {_val}")
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)
