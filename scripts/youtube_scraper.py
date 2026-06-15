@@ -846,8 +846,8 @@ def handle_subtitles(args: argparse.Namespace) -> dict:
     """Handle subtitle extraction (and optional download)."""
     url = args.url
 
-    if not url or not is_valid_youtube_url(url):
-        logger.error("--subtitles requires a valid --url")
+    if not url or detect_url_type(url) != "video":
+        logger.error("--subtitles requires a single video URL (not a playlist or channel)")
         sys.exit(1)
 
     extractor = SubtitleExtractor(
@@ -864,8 +864,8 @@ def handle_download(args: argparse.Namespace) -> dict:
     """Handle file downloads (video or audio)."""
     url = args.url
 
-    if not url or not is_valid_youtube_url(url):
-        logger.error("--download-video/--download-audio requires a valid --url")
+    if not url or detect_url_type(url) != "video":
+        logger.error("--download-video/--download-audio requires a single video URL (not a playlist or channel)")
         sys.exit(1)
 
     dl = Downloader(output_dir=args.download_dir, verbose=args.verbose)

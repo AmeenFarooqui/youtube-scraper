@@ -158,6 +158,17 @@ class Downloader:
         after = set(self.output_dir.iterdir())
         new_files = [str(p) for p in (after - before) if p.is_file()]
 
+        # yt-dlp skipped writing (file already exists) — find by video ID in filename
+        if not new_files:
+            video_id = safe_get(sanitized, "id") or ""
+            if video_id:
+                new_files = [
+                    str(p) for p in self.output_dir.iterdir()
+                    if p.is_file() and f"[{video_id}]" in p.name
+                ]
+                if new_files:
+                    logger.info(f"Download skipped — reusing existing file(s) for {video_id}")
+
         # Find the primary output file (the one matching our extension)
         primary_file = next(
             (f for f in new_files if f.endswith(f".{file_format}")),

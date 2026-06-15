@@ -69,7 +69,7 @@ class VideoExtractor:
             opts["getcomments"] = True
         return opts
 
-    def extract(self, url: str, get_comments: bool = False) -> dict:
+    def extract(self, url: str, get_comments: bool = False, comments_max: int = 10000) -> dict:
         """
         Fetch and return all available metadata for a YouTube video.
 
@@ -260,7 +260,7 @@ class VideoExtractor:
             "content_type": content_type,   # "video" | "short" | "live" | "premiere"
 
             # Comments (populated only when --comments flag is used)
-            "comments": self._shape_comments(raw_comments),
+            "comments": self._shape_comments(raw_comments, comments_max),
             "comments_fetched": len(raw_comments),
 
             # Extractor metadata

@@ -180,6 +180,22 @@ class SubtitleExtractor:
                 if ext in ("srt", "vtt", "ass", "ttml") and str(path) not in existing:
                     downloaded.append(str(path))
 
+            # yt-dlp skipped writing (file already exists) — find by video ID in filename
+            if not downloaded:
+                import re
+                vid_match = re.search(
+                    r'[?&]v=([A-Za-z0-9_-]{11})|/(?:shorts|embed|v)/([A-Za-z0-9_-]{11})',
+                    url,
+                )
+                if vid_match:
+                    video_id = vid_match.group(1) or vid_match.group(2)
+                    for path in self.output_dir.iterdir():
+                        ext = path.suffix.lstrip(".")
+                        if ext in ("srt", "vtt", "ass", "ttml") and f"[{video_id}]" in path.name:
+                            downloaded.append(str(path))
+                    if downloaded:
+                        logger.info(f"Reusing {len(downloaded)} existing subtitle file(s) for {video_id}")
+
         except Exception as e:
             raise SubtitleError(
                 message=f"Failed to download subtitles: {e}",
