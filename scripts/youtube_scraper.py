@@ -700,16 +700,30 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
         urls = urls[:args.max_videos]
         logger.info(f"Limited to {args.max_videos} URLs")
 
+    # Deduplicate by video ID, preserving order
+    seen_ids: set[str] = set()
+    deduped: list[str] = []
+    for u in urls:
+        vid_id = extract_video_id(u)
+        key = vid_id if vid_id else u
+        if key not in seen_ids:
+            seen_ids.add(key)
+            deduped.append(u)
+    if len(deduped) < len(urls):
+        logger.info(f"Removed {len(urls) - len(deduped)} duplicate URL(s)")
+    urls = deduped
+
     results: list[dict] = [None] * len(urls)
 
-    extractor = VideoExtractor(verbose=args.verbose)
     cache = _make_cache(args)
     tracker = _make_failure_tracker(args)
     get_comments = getattr(args, "comments", False)
+    _verbose = args.verbose
 
     def process_url(index_url: tuple[int, str]) -> tuple[int, dict]:
         i, url = index_url
         logger.info(f"[{i+1}/{len(urls)}] Processing: {url}")
+        extractor = VideoExtractor(verbose=_verbose)
 
         # Check cache (skip when fetching comments)
         if cache and not get_comments:
@@ -860,9 +874,9 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
     Used automatically when --comments is set with --search (without --pipeline).
     Falls back to the original stub if the full fetch fails.
     """
-    extractor = VideoExtractor(verbose=args.verbose)
     get_comments = getattr(args, "comments", False)
     max_c = getattr(args, "comments_max", 500)
+    _verbose = args.verbose
     results: list[dict | None] = [None] * len(stubs)
 
     def _fetch(index_stub: tuple[int, dict]) -> tuple[int, dict]:
@@ -870,6 +884,7 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
         url = stub.get("url") or stub.get("webpage_url")
         if not url:
             return i, stub
+        extractor = VideoExtractor(verbose=_verbose)
         try:
             data = extractor.extract(url, get_comments=get_comments)
             if get_comments and data.get("comments"):
@@ -889,23 +904,29 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
     return [r for r in results if r is not None]
 
 
-def _enrich_dislikes(items: list[dict]) -> list[dict]:
+def _enrich_dislikes(items: list[dict], workers: int = 5) -> list[dict]:
     """
     Add RYD dislike data to each item in a list that has a video 'id'.
 
-    Makes one API call per item. Failures are silent — item is left unchanged.
+    Runs concurrently — one API call per item, up to `workers` in parallel.
+    Failures are silent — item is left unchanged.
     """
     client = RYDClient(timeout=RYD_TIMEOUT)
-    for item in items:
+
+    def _enrich_one(item: dict) -> None:
         vid_id = item.get("id") or item.get("video_id")
         if not vid_id:
-            continue
+            return
         ryd = client.get_dislikes(vid_id)
         if ryd:
             item["dislike_count"]           = ryd["dislikes"]
             item["dislike_count_formatted"] = format_number(ryd["dislikes"])
             item["dislike_count_estimated"] = True
             item["rating_ryd"]              = ryd["rating"]
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        list(executor.map(_enrich_one, items))
+
     return items
 
 

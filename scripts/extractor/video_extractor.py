@@ -238,7 +238,6 @@ class VideoExtractor:
 
             # Formats
             "formats_summary": format_summary,
-            "formats_raw": formats,  # Full list from yt-dlp
 
             # Subtitles
             "subtitles_summary": subtitle_summary,
