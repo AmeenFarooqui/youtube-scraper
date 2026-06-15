@@ -208,6 +208,21 @@ def safe_filename(name: str, max_length: int = 200) -> str:
 
 # ── List/dict helpers ─────────────────────────────────────────────────────────
 
+def is_youtube_short(url: str | None, duration: int | None = None) -> bool:
+    """
+    Detect if a video is a YouTube Short.
+
+    Primary signal:  URL contains '/shorts/' (reliable)
+    Secondary signal: duration <= 60 seconds (heuristic — not 100% accurate,
+                      but covers cases where the URL doesn't include /shorts/)
+    """
+    if url and "/shorts/" in str(url):
+        return True
+    if duration is not None and 0 < duration <= 60:
+        return True
+    return False
+
+
 def flatten_list(nested: list | None, separator: str = ", ") -> str:
     """
     Join a list of strings into a single string, or return "None" if empty.

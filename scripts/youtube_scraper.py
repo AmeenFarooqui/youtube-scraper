@@ -54,16 +54,21 @@ from utils import (
     is_valid_youtube_url,
     detect_url_type,
     validate_batch_file,
+    extract_video_id,
+    format_number,
     ScraperError,
     format_error_for_report,
+    FailureTracker,
+    RYDClient,
+    SentimentAnalyzer,
 )
 from extractor import (
     VideoExtractor, PlaylistExtractor, SubtitleExtractor, Downloader,
-    SearchExtractor, PipelineExtractor,
+    SearchExtractor, PipelineExtractor, ChannelExtractor,
 )
 from formatter import JsonFormatter, CsvFormatter, MarkdownFormatter
 from reports import ReportGenerator
-from config import DEFAULT_OUTPUT_DIR, MAX_WORKERS
+from config import DEFAULT_OUTPUT_DIR, MAX_WORKERS, CACHE_ENABLED, CACHE_TTL_HOURS, CACHE_DIR, RYD_TIMEOUT
 
 logger = get_logger(__name__)
 
@@ -129,6 +134,14 @@ Examples:
         metavar="FILE",
         dest="search_batch",
         help="Path to a text file with one search query per line",
+    )
+    source.add_argument(
+        "--channel", "-c",
+        metavar="URL",
+        help=(
+            "YouTube channel URL (any format: @handle, /channel/ID, /c/Name). "
+            "Use --channel-tab to select which tab to fetch."
+        ),
     )
 
     # ── Search & pipeline options ─────────────────────────────────────────────
@@ -342,6 +355,244 @@ Examples:
         help=f"Concurrent workers for batch processing (default: {MAX_WORKERS}). Use 1 for sequential.",
     )
 
+    # ── Channel options ───────────────────────────────────────────────────────
+    channel_group = parser.add_argument_group(
+        "Channel options",
+        "Use with --channel to select which tab to fetch.",
+    )
+    channel_group.add_argument(
+        "--channel-tab",
+        metavar="TAB",
+        dest="channel_tab",
+        default="videos",
+        choices=["videos", "shorts", "streams", "all"],
+        help=(
+            "Channel tab to scrape: videos (default), shorts, streams, or all. "
+            "Use 'all' to merge all three tabs into one result."
+        ),
+    )
+
+    # ── Comments options ──────────────────────────────────────────────────────
+    comments_group = parser.add_argument_group("Comments")
+    comments_group.add_argument(
+        "--comments",
+        action="store_true",
+        help=(
+            "Fetch video comments (single video or batch). "
+            "Uses yt-dlp's built-in comment extraction — no API key needed."
+        ),
+    )
+    comments_group.add_argument(
+        "--comments-max",
+        metavar="N",
+        dest="comments_max",
+        type=int,
+        default=500,
+        help="Maximum comments to include in output (default: 500). yt-dlp fetches up to ~1000.",
+    )
+
+    # ── Shorts / content-type filters ────────────────────────────────────────
+    shorts_group = parser.add_argument_group(
+        "Content-type filters",
+        "Filter search / channel results by content type. Mutually exclusive.",
+    )
+    shorts_ex = shorts_group.add_mutually_exclusive_group()
+    shorts_ex.add_argument(
+        "--shorts-only",
+        action="store_true",
+        dest="shorts_only",
+        help="Only include YouTube Shorts in results (duration ≤ 60s or /shorts/ URL).",
+    )
+    shorts_ex.add_argument(
+        "--no-shorts",
+        action="store_true",
+        dest="no_shorts",
+        help="Exclude YouTube Shorts from results.",
+    )
+
+    # ── Cache options ─────────────────────────────────────────────────────────
+    cache_group = parser.add_argument_group(
+        "Cache options",
+        "SQLite metadata cache — avoids re-fetching already-seen videos.",
+    )
+    cache_group.add_argument(
+        "--no-cache",
+        action="store_true",
+        dest="no_cache",
+        help="Disable the metadata cache for this run.",
+    )
+    cache_group.add_argument(
+        "--cache-ttl",
+        metavar="HOURS",
+        dest="cache_ttl",
+        type=float,
+        default=CACHE_TTL_HOURS,
+        help=f"Cache time-to-live in hours (default: {CACHE_TTL_HOURS}). Expired entries are re-fetched.",
+    )
+    cache_group.add_argument(
+        "--cache-dir",
+        metavar="DIR",
+        dest="cache_dir",
+        default=None,
+        help="Directory for the SQLite cache file (default: ~/.cache/youtube_scraper/).",
+    )
+    cache_group.add_argument(
+        "--cache-clear",
+        action="store_true",
+        dest="cache_clear",
+        help="Clear all cached entries before running.",
+    )
+
+    # ── Failure log ───────────────────────────────────────────────────────────
+    fail_group = parser.add_argument_group(
+        "Failure tracking",
+        "Log failed URLs to a JSONL file for later inspection or retry.",
+    )
+    fail_group.add_argument(
+        "--failure-log",
+        metavar="PATH",
+        dest="failure_log",
+        default=None,
+        help=(
+            "Path to a JSONL file where failed URLs will be logged. "
+            "Each line is a JSON object with url, error_type, failure_class (permanent/transient), and message."
+        ),
+    )
+
+    # ── Engagement options ────────────────────────────────────────────────────
+    engage_group = parser.add_argument_group(
+        "Engagement",
+        "Fetch dislike estimates and run comment sentiment analysis.",
+    )
+    engage_group.add_argument(
+        "--dislikes",
+        action="store_true",
+        help=(
+            "Fetch estimated dislike counts from the Return YouTube Dislike API "
+            "(returnyoutubedislikeapi.com). No API key needed. Adds dislike_count, "
+            "dislike_count_formatted, and rating_ryd fields."
+        ),
+    )
+    engage_group.add_argument(
+        "--sentiment",
+        action="store_true",
+        help=(
+            "Run VADER sentiment analysis on fetched comments. Requires --comments. "
+            "Adds sentiment_summary with positive_pct, negative_pct, neutral_pct, compound_avg."
+        ),
+    )
+
+    # ── Sorting ───────────────────────────────────────────────────────────────
+    sort_group = parser.add_argument_group(
+        "Sorting",
+        "Sort results from search, channel, or batch by any engagement field.",
+    )
+    sort_group.add_argument(
+        "--sort-by",
+        metavar="FIELD",
+        dest="sort_by",
+        default=None,
+        choices=["views", "likes", "subscribers", "date", "duration",
+                 "dislikes", "positive_ratio", "negative_ratio"],
+        help=(
+            "Sort results by: views, likes, subscribers, date, duration, dislikes "
+            "(requires --dislikes), positive_ratio / negative_ratio (requires --sentiment --comments). "
+            "Default: no sort (original order)."
+        ),
+    )
+    sort_group.add_argument(
+        "--sort-order",
+        metavar="ORDER",
+        dest="sort_order",
+        default="desc",
+        choices=["asc", "desc"],
+        help="Sort direction: desc (default, highest first) or asc (lowest first).",
+    )
+
+    # ── Engagement filters ────────────────────────────────────────────────────
+    eng_filter_group = parser.add_argument_group(
+        "Engagement filters",
+        "Filter results by engagement metrics. Applied after fetching.",
+    )
+    eng_filter_group.add_argument(
+        "--filter-min-likes",
+        metavar="N",
+        dest="filter_min_likes",
+        type=int,
+        default=None,
+        help="Minimum like count.",
+    )
+    eng_filter_group.add_argument(
+        "--filter-max-likes",
+        metavar="N",
+        dest="filter_max_likes",
+        type=int,
+        default=None,
+        help="Maximum like count.",
+    )
+    eng_filter_group.add_argument(
+        "--filter-max-views",
+        metavar="N",
+        dest="filter_max_views",
+        type=int,
+        default=None,
+        help="Maximum view count.",
+    )
+    eng_filter_group.add_argument(
+        "--filter-min-subscribers",
+        metavar="N",
+        dest="filter_min_subscribers",
+        type=int,
+        default=None,
+        help="Minimum channel subscriber count.",
+    )
+    eng_filter_group.add_argument(
+        "--filter-max-subscribers",
+        metavar="N",
+        dest="filter_max_subscribers",
+        type=int,
+        default=None,
+        help="Maximum channel subscriber count.",
+    )
+    eng_filter_group.add_argument(
+        "--filter-min-dislikes",
+        metavar="N",
+        dest="filter_min_dislikes",
+        type=int,
+        default=None,
+        help="Minimum dislike count (requires --dislikes).",
+    )
+    eng_filter_group.add_argument(
+        "--filter-max-dislikes",
+        metavar="N",
+        dest="filter_max_dislikes",
+        type=int,
+        default=None,
+        help="Maximum dislike count (requires --dislikes).",
+    )
+    eng_filter_group.add_argument(
+        "--filter-min-positive-ratio",
+        metavar="RATIO",
+        dest="filter_min_positive_ratio",
+        type=float,
+        default=None,
+        help=(
+            "Minimum fraction of positive comments (0.0–1.0). "
+            "Requires --comments and --sentiment."
+        ),
+    )
+    eng_filter_group.add_argument(
+        "--filter-min-negative-ratio",
+        metavar="RATIO",
+        dest="filter_min_negative_ratio",
+        type=float,
+        default=None,
+        help=(
+            "Minimum fraction of negative comments (0.0–1.0). "
+            "Requires --comments and --sentiment."
+        ),
+    )
+
     # ── Global options ────────────────────────────────────────────────────────
     global_group = parser.add_argument_group("Global options")
     global_group.add_argument(
@@ -359,16 +610,63 @@ Examples:
 # They all return a dict or list that gets passed to the output handler.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _make_cache(args: argparse.Namespace):
+    """Build a CacheManager from CLI args, or return None if caching is disabled."""
+    if getattr(args, "no_cache", False) or not CACHE_ENABLED:
+        return None
+    from cache import CacheManager
+    ttl_secs = int(getattr(args, "cache_ttl", CACHE_TTL_HOURS) * 3600)
+    return CacheManager(cache_dir=getattr(args, "cache_dir", None) or CACHE_DIR, ttl=ttl_secs)
+
+
+def _make_failure_tracker(args: argparse.Namespace):
+    """Build a FailureTracker if --failure-log was given, else return None."""
+    path = getattr(args, "failure_log", None)
+    return FailureTracker(path) if path else None
+
+
 def handle_video(args: argparse.Namespace) -> dict:
-    """Handle single video metadata extraction."""
+    """Handle single video metadata extraction (with cache + optional comments)."""
     url = args.url
 
     if not is_valid_youtube_url(url):
         logger.error(f"Not a valid YouTube URL: {url}")
         sys.exit(1)
 
+    get_comments = getattr(args, "comments", False)
+
+    # Cache: only skip cache when comments are requested (comments won't be cached from a prior run)
+    cache = None if get_comments else _make_cache(args)
+    if cache:
+        video_id = extract_video_id(url)
+        if video_id:
+            cached = cache.get(video_id)
+            if cached:
+                logger.info(f"Cache hit for {video_id} — skipping network fetch")
+                return cached
+
     extractor = VideoExtractor(verbose=args.verbose)
-    return extractor.extract(url)
+    result = extractor.extract(url, get_comments=get_comments)
+
+    # Apply comments_max cap
+    if get_comments and result.get("comments"):
+        max_c = getattr(args, "comments_max", 500)
+        result["comments"] = result["comments"][:max_c]
+        result["comments_fetched"] = len(result["comments"])
+
+    # Store in cache (only when not fetching comments, to keep cache entries lean)
+    if cache and not get_comments and result.get("id"):
+        cache.put(result["id"], url, result)
+
+    # Optional: fetch dislike estimates from Return YouTube Dislike API
+    if getattr(args, "dislikes", False):
+        result = _enrich_dislikes_single(result)
+
+    # Optional: run VADER sentiment on fetched comments
+    if getattr(args, "sentiment", False):
+        result = _enrich_sentiment_single(result)
+
+    return result
 
 
 def handle_playlist(args: argparse.Namespace) -> dict:
@@ -388,7 +686,7 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
     Handle batch processing of multiple URLs from a file.
 
     URLs are processed concurrently (up to --workers at a time).
-    If a URL fails, we log the error and continue with the rest.
+    Cache hits skip the network; failures are logged to --failure-log.
     """
     is_valid, message, urls = validate_batch_file(args.batch)
 
@@ -398,28 +696,42 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
 
     logger.info(message)
 
-    # Apply max_videos limit to batch if set
     if args.max_videos:
         urls = urls[:args.max_videos]
         logger.info(f"Limited to {args.max_videos} URLs")
 
-    results: list[dict] = [None] * len(urls)  # Pre-allocate to preserve order
+    results: list[dict] = [None] * len(urls)
 
     extractor = VideoExtractor(verbose=args.verbose)
+    cache = _make_cache(args)
+    tracker = _make_failure_tracker(args)
+    get_comments = getattr(args, "comments", False)
 
     def process_url(index_url: tuple[int, str]) -> tuple[int, dict]:
-        """Process a single URL and return (index, result)."""
         i, url = index_url
         logger.info(f"[{i+1}/{len(urls)}] Processing: {url}")
+
+        # Check cache (skip when fetching comments)
+        if cache and not get_comments:
+            video_id = extract_video_id(url)
+            if video_id:
+                cached = cache.get(video_id)
+                if cached:
+                    logger.info(f"Cache hit: {video_id}")
+                    return i, cached
+
         try:
-            data = extractor.extract(url)
+            data = extractor.extract(url, get_comments=get_comments)
+            # Store in cache
+            if cache and not get_comments and data.get("id"):
+                cache.put(data["id"], url, data)
             return i, data
         except ScraperError as e:
+            if tracker:
+                tracker.record(e, url=url)
             logger.warning(f"Failed: {url} — {e.user_message}")
             return i, format_error_for_report(e)
 
-    # Process with thread pool for concurrency
-    # ThreadPoolExecutor is safe here because yt-dlp releases the GIL for I/O
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         futures = {
             executor.submit(process_url, (i, url)): i
@@ -441,7 +753,33 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
         if pbar:
             pbar.close()
 
-    return [r for r in results if r is not None]
+    if tracker and tracker.has_failures:
+        s = tracker.summary()
+        logger.warning(
+            f"Failures: {s['total_failures']} total "
+            f"({s['permanent']} permanent, {s['transient']} transient). "
+            f"See: {s['log_path']}"
+        )
+
+    items = [r for r in results if r is not None]
+
+    # Post-processing: enrich, filter, sort
+    if getattr(args, "dislikes", False):
+        items = _enrich_dislikes(items)
+
+    if getattr(args, "sentiment", False):
+        sentiment_analyzer = SentimentAnalyzer()
+        for item in items:
+            if item.get("comments"):
+                summary = sentiment_analyzer.analyze(item["comments"])
+                if summary:
+                    item["sentiment_summary"] = summary
+
+    items = _apply_shorts_filter(items, args)
+    items = _apply_engagement_filters(items, args)
+    items = _apply_sort(items, args)
+
+    return items
 
 
 def handle_subtitles(args: argparse.Namespace) -> dict:
@@ -509,10 +847,186 @@ def _build_pipeline(args: argparse.Namespace) -> PipelineExtractor:
     )
 
 
+def _enrich_dislikes(items: list[dict]) -> list[dict]:
+    """
+    Add RYD dislike data to each item in a list that has a video 'id'.
+
+    Makes one API call per item. Failures are silent — item is left unchanged.
+    """
+    client = RYDClient(timeout=RYD_TIMEOUT)
+    for item in items:
+        vid_id = item.get("id") or item.get("video_id")
+        if not vid_id:
+            continue
+        ryd = client.get_dislikes(vid_id)
+        if ryd:
+            item["dislike_count"]           = ryd["dislikes"]
+            item["dislike_count_formatted"] = format_number(ryd["dislikes"])
+            item["dislike_count_estimated"] = True
+            item["rating_ryd"]              = ryd["rating"]
+    return items
+
+
+def _enrich_dislikes_single(result: dict) -> dict:
+    """Add RYD dislike data to a single video result dict."""
+    vid_id = result.get("id")
+    if not vid_id:
+        return result
+    ryd = RYDClient(timeout=RYD_TIMEOUT).get_dislikes(vid_id)
+    if ryd:
+        result["dislike_count"]           = ryd["dislikes"]
+        result["dislike_count_formatted"] = format_number(ryd["dislikes"])
+        result["dislike_count_estimated"] = True
+        result["rating_ryd"]              = ryd["rating"]
+    return result
+
+
+def _enrich_sentiment_single(result: dict) -> dict:
+    """Run VADER sentiment on a single video's fetched comments."""
+    comments = result.get("comments") or []
+    if not comments:
+        return result
+    summary = SentimentAnalyzer().analyze(comments)
+    if summary:
+        result["sentiment_summary"] = summary
+    return result
+
+
+def _apply_engagement_filters(items: list[dict], args: argparse.Namespace) -> list[dict]:
+    """
+    Filter a list of video dicts by engagement metrics.
+
+    Each filter is a (arg_name, field_key, comparator) triple.
+    Items missing the field are excluded when a threshold is set.
+    """
+    numeric_filters = [
+        ("filter_min_views",        "view_count",             lambda v, t: v >= t),
+        ("filter_max_views",        "view_count",             lambda v, t: v <= t),
+        ("filter_min_likes",        "like_count",             lambda v, t: v >= t),
+        ("filter_max_likes",        "like_count",             lambda v, t: v <= t),
+        ("filter_min_subscribers",  "channel_follower_count", lambda v, t: v >= t),
+        ("filter_max_subscribers",  "channel_follower_count", lambda v, t: v <= t),
+        ("filter_min_dislikes",     "dislike_count",          lambda v, t: v >= t),
+        ("filter_max_dislikes",     "dislike_count",          lambda v, t: v <= t),
+    ]
+    for arg_name, field, test in numeric_filters:
+        threshold = getattr(args, arg_name, None)
+        if threshold is None:
+            continue
+        items = [
+            item for item in items
+            if (val := item.get(field)) is not None and test(val, threshold)
+        ]
+
+    min_pos = getattr(args, "filter_min_positive_ratio", None)
+    if min_pos is not None:
+        items = [
+            i for i in items
+            if (s := i.get("sentiment_summary")) and s.get("positive_pct", 0) >= min_pos
+        ]
+
+    min_neg = getattr(args, "filter_min_negative_ratio", None)
+    if min_neg is not None:
+        items = [
+            i for i in items
+            if (s := i.get("sentiment_summary")) and s.get("negative_pct", 0) >= min_neg
+        ]
+
+    return items
+
+
+def _apply_sort(items: list[dict], args: argparse.Namespace) -> list[dict]:
+    """
+    Sort a list of video dicts by a field.
+
+    Items where the sort field is None/missing are placed at the end.
+    """
+    sort_by = getattr(args, "sort_by", None)
+    if not sort_by or not items:
+        return items
+
+    _GETTERS: dict = {
+        "views":           lambda i: i.get("view_count"),
+        "likes":           lambda i: i.get("like_count"),
+        "subscribers":     lambda i: i.get("channel_follower_count"),
+        "date":            lambda i: i.get("upload_date"),
+        "duration":        lambda i: i.get("duration"),
+        "dislikes":        lambda i: i.get("dislike_count"),
+        "positive_ratio":  lambda i: (i.get("sentiment_summary") or {}).get("positive_pct"),
+        "negative_ratio":  lambda i: (i.get("sentiment_summary") or {}).get("negative_pct"),
+    }
+
+    getter = _GETTERS.get(sort_by)
+    if not getter:
+        return items
+
+    reverse = getattr(args, "sort_order", "desc") == "desc"
+
+    with_val = [(item, getter(item)) for item in items]
+    has_val  = [(item, v) for item, v in with_val if v is not None]
+    no_val   = [item for item, v in with_val if v is None]
+
+    try:
+        has_val.sort(key=lambda x: x[1], reverse=reverse)
+    except TypeError:
+        has_val.sort(key=lambda x: str(x[1]), reverse=reverse)
+
+    return [item for item, _ in has_val] + no_val
+
+
+def _apply_shorts_filter(items: list[dict], args: argparse.Namespace) -> list[dict]:
+    """
+    Filter a list of video dicts by Shorts status.
+
+    --shorts-only: keep only items where is_short is True
+    --no-shorts:   keep only items where is_short is False (or not set)
+    """
+    if getattr(args, "shorts_only", False):
+        return [v for v in items if v.get("is_short")]
+    if getattr(args, "no_shorts", False):
+        return [v for v in items if not v.get("is_short")]
+    return items
+
+
+def handle_channel(args: argparse.Namespace) -> dict:
+    """Handle channel tab extraction."""
+    extractor = ChannelExtractor(
+        tab=args.channel_tab,
+        full_details=args.full_playlist,
+        max_videos=args.max_videos,
+        verbose=args.verbose,
+    )
+    result = extractor.extract(args.channel)
+
+    if result.get("videos"):
+        items = result["videos"]
+        items = _apply_shorts_filter(items, args)
+        if getattr(args, "dislikes", False):
+            items = _enrich_dislikes(items)
+        items = _apply_engagement_filters(items, args)
+        items = _apply_sort(items, args)
+        result["videos"] = items
+        result["total_videos"] = len(items)
+
+    return result
+
+
 def handle_search(args: argparse.Namespace) -> dict:
     """Handle YouTube keyword search — returns ranked result list."""
     extractor = SearchExtractor(max_results=args.search_limit, verbose=args.verbose)
-    return extractor.search(args.search)
+    result = extractor.search(args.search)
+
+    if result.get("results"):
+        items = result["results"]
+        items = _apply_shorts_filter(items, args)
+        if getattr(args, "dislikes", False):
+            items = _enrich_dislikes(items)
+        items = _apply_engagement_filters(items, args)
+        items = _apply_sort(items, args)
+        result["results"] = items
+        result["total_results"] = len(items)
+
+    return result
 
 
 def handle_search_batch(args: argparse.Namespace) -> dict:
@@ -660,6 +1174,10 @@ def _extract_urls(data: dict | list) -> list[str]:
             for v in data.get("videos", []):
                 if u := _u(v):
                     urls.append(u)
+        elif _ext == "ChannelExtractor":
+            for v in data.get("videos", []) or data.get("entries", []):
+                if v and (u := _u(v)):
+                    urls.append(u)
         elif "queries" in data:
             for q in data.get("queries", []):
                 for item in q.get("videos") or q.get("results") or []:
@@ -709,6 +1227,7 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     _ext         = data.get("_extractor", "") if isinstance(data, dict) else ""
     is_search    = _ext == "SearchExtractor"
     is_pipeline  = _ext == "PipelineExtractor"
+    is_channel   = _ext == "ChannelExtractor"
     is_batch_res = isinstance(data, dict) and "queries" in data  # search/pipeline batch
     is_playlist  = isinstance(data, dict) and "playlist_id" in data
     is_batch     = isinstance(data, list)
@@ -719,6 +1238,10 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
             _print_search_results(data)
         elif is_pipeline:
             _print_pipeline_results(data)
+        elif is_channel:
+            tab  = data.get("tab", "?")
+            n    = data.get("total_videos", len(data.get("videos", [])))
+            print(f'\nChannel: {data.get("channel_url")}  |  tab: {tab}  |  {n} videos\n')
         elif is_batch_res:
             for q in data.get("queries", []):
                 if q.get("_extractor") == "PipelineExtractor":
@@ -743,6 +1266,8 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
             # Format search results as a batch (list of result entries)
             content = fmt.format_batch(data.get("results", []))
         elif is_pipeline:
+            content = fmt.format_batch(data.get("videos", []))
+        elif is_channel:
             content = fmt.format_batch(data.get("videos", []))
         elif is_batch_res:
             all_videos = []
@@ -775,6 +1300,9 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
             rows = data.get("results", [])
             _csv_out(fmt.format_many(rows), rows)
         elif is_pipeline:
+            rows = data.get("videos", [])
+            _csv_out(fmt.format_many(rows), rows)
+        elif is_channel:
             rows = data.get("videos", [])
             _csv_out(fmt.format_many(rows), rows)
         elif is_batch_res:
@@ -832,10 +1360,28 @@ def main() -> None:
         parser.error("--search and --url are mutually exclusive. Use one input mode at a time.")
     if args.batch and args.search:
         parser.error("--batch and --search are mutually exclusive. --batch takes a file of URLs; --search takes a keyword.")
+    if getattr(args, "comments", False) and args.search:
+        parser.error("--comments is not supported with --search (use --url or --batch instead).")
+    if getattr(args, "sentiment", False) and not getattr(args, "comments", False):
+        parser.error("--sentiment requires --comments to be enabled.")
+    if getattr(args, "filter_min_dislikes", None) is not None and not getattr(args, "dislikes", False):
+        parser.error("--filter-min-dislikes requires --dislikes.")
+    if getattr(args, "filter_max_dislikes", None) is not None and not getattr(args, "dislikes", False):
+        parser.error("--filter-max-dislikes requires --dislikes.")
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)
     gen = ReportGenerator(verbose=args.verbose)
+
+    # ── Cache: optional pre-run clear ─────────────────────────────────────────
+    if getattr(args, "cache_clear", False):
+        from cache import CacheManager
+        cache = CacheManager(
+            cache_dir=getattr(args, "cache_dir", None) or CACHE_DIR,
+            ttl=int(getattr(args, "cache_ttl", CACHE_TTL_HOURS) * 3600),
+        )
+        removed = cache.clear()
+        logger.info(f"Cache cleared: {removed} entries removed from {cache._db_path}")
 
     try:
         # ── Route to handler ──────────────────────────────────────────────────
@@ -850,6 +1396,9 @@ def main() -> None:
 
         elif args.batch:
             result = handle_batch(args)
+
+        elif args.channel:
+            result = handle_channel(args)
 
         elif args.search:
             if args.pipeline:

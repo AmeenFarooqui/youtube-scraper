@@ -131,6 +131,24 @@ AUDIO_DOWNLOAD_YDL_OPTS: dict = {
 }
 
 
+# ── Cache settings ────────────────────────────────────────────────────────────
+
+# Directory for the SQLite cache (None = ~/.cache/youtube_scraper/)
+CACHE_DIR: str | None = None
+
+# How long cached entries are considered fresh (hours)
+CACHE_TTL_HOURS: int = 24
+
+# Whether caching is enabled by default (can be overridden with --no-cache)
+CACHE_ENABLED: bool = True
+
+
+# ── Return YouTube Dislike API ────────────────────────────────────────────────
+
+# HTTP request timeout for RYD API calls (seconds)
+RYD_TIMEOUT: int = 5
+
+
 # ── Output format defaults ────────────────────────────────────────────────────
 
 DEFAULT_OUTPUT_FORMAT = "json"      # "json" | "csv" | "markdown"
@@ -168,4 +186,7 @@ CSV_FIELDS = [
     "subtitle_languages",
     "has_chapters",
     "channel_follower_count",
+    "dislike_count",
+    "dislike_count_formatted",
+    "dislike_count_estimated",
 ]

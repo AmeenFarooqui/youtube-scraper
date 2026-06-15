@@ -1,0 +1,19 @@
+services:
+  scraper:
+    build: .
+    # Override CMD to pass your own flags, e.g.:
+    #   docker compose run --rm scraper --search "topic" --search-limit 10 --output /app/outputs/results.json
+    volumes:
+      # Downloaded files and JSON/CSV/Markdown output
+      - ./outputs:/app/scripts/outputs
+      # Persistent SQLite metadata cache (survives container restarts)
+      - youtube_scraper_cache:/root/.cache/youtube_scraper
+      # Failure logs (optional — only used when --failure-log is passed)
+      - ./logs:/app/logs
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+
+volumes:
+  youtube_scraper_cache:

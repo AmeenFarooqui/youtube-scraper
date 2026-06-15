@@ -39,6 +39,7 @@ from utils.helpers import (
     format_number,
     format_date,
     seconds_to_hms,
+    is_youtube_short,
 )
 from utils.error_handler import classify_ytdlp_error, format_error_for_report
 
@@ -200,12 +201,14 @@ class PlaylistExtractor:
 
         duration_secs = g("duration")
         upload_date = g("upload_date")
+        url = g("url") or g("webpage_url")
+        is_short = is_youtube_short(url, duration_secs)
 
         return {
             "position": position,
             "id": g("id"),
             "title": g("title"),
-            "url": g("url") or g("webpage_url"),
+            "url": url,
             "uploader": g("uploader") or g("channel"),
             "duration": duration_secs,
             "duration_string": seconds_to_hms(duration_secs),
@@ -220,6 +223,8 @@ class PlaylistExtractor:
             "tags": g("tags") or [],
             "categories": g("categories") or [],
             "description": g("description"),
+            "is_short": is_short,
+            "content_type": "short" if is_short else "video",
         }
 
     def _compute_summary(self, videos: list[dict]) -> dict:

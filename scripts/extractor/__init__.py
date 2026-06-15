@@ -5,6 +5,7 @@ from .subtitle_extractor import SubtitleExtractor
 from .downloader import Downloader
 from .search_extractor import SearchExtractor
 from .pipeline_extractor import PipelineExtractor
+from .channel_extractor import ChannelExtractor
 
 __all__ = [
     "VideoExtractor",
@@ -13,4 +14,5 @@ __all__ = [
     "Downloader",
     "SearchExtractor",
     "PipelineExtractor",
+    "ChannelExtractor",
 ]

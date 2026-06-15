@@ -23,7 +23,7 @@ import yt_dlp
 
 from config import BASE_YDL_OPTS
 from utils.logger import get_logger, YtDlpLogger
-from utils.helpers import format_number, seconds_to_hms, format_date, safe_get
+from utils.helpers import format_number, seconds_to_hms, format_date, safe_get, is_youtube_short
 from utils.error_handler import classify_ytdlp_error
 
 logger = get_logger(__name__)
@@ -116,6 +116,8 @@ class SearchExtractor:
             f"https://www.youtube.com/watch?v={video_id}" if video_id else None
         )
 
+        is_short = is_youtube_short(url, duration)
+
         return {
             "position":              position,
             "id":                    video_id,
@@ -131,4 +133,6 @@ class SearchExtractor:
             "view_count_formatted":  format_number(view_count),
             "thumbnail":             g("thumbnail"),
             "description":           g("description"),
+            "is_short":              is_short,
+            "content_type":          "short" if is_short else "video",
         }

@@ -10,6 +10,9 @@ tqdm>=4.66.0
 # Data manipulation for CSV exports and analysis
 pandas>=2.0.0
 
+# Sentiment analysis for YouTube comments (VADER — tuned for social media text)
+vaderSentiment>=3.3.2
+
 # Note: ffmpeg must be installed separately (not a Python package)
 # Linux: sudo apt install ffmpeg
 # Mac:   brew install ffmpeg

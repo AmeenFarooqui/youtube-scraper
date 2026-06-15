@@ -34,6 +34,7 @@ from utils.helpers import (
     flatten_list,
     truncate,
     seconds_to_hms,
+    is_youtube_short,
 )
 from utils.error_handler import classify_ytdlp_error
 
@@ -55,14 +56,19 @@ class VideoExtractor:
         self.verbose = verbose
         self._ydl_logger = YtDlpLogger(get_logger("yt_dlp", verbose=verbose))
 
-    def _build_opts(self) -> dict:
+    def _build_opts(self, get_comments: bool = False) -> dict:
         """Merge base options with this extractor's specific needs."""
-        return {
+        opts = {
             **BASE_YDL_OPTS,
             "logger": self._ydl_logger,
         }
+        if get_comments:
+            # Instructs yt-dlp to fetch the comments section.
+            # Returns up to ~1000 top-level + reply comments from YouTube.
+            opts["getcomments"] = True
+        return opts
 
-    def extract(self, url: str) -> dict:
+    def extract(self, url: str, get_comments: bool = False) -> dict:
         """
         Fetch and return all available metadata for a YouTube video.
 
@@ -77,7 +83,7 @@ class VideoExtractor:
         """
         logger.info(f"Extracting metadata for: {url}")
 
-        opts = self._build_opts()
+        opts = self._build_opts(get_comments=get_comments)
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
@@ -164,6 +170,20 @@ class VideoExtractor:
         # ── Heatmap (popularity over time) ────────────────────────────────────
         heatmap = g("heatmap") or []
 
+        # ── Shorts detection ──────────────────────────────────────────────────
+        is_short = is_youtube_short(webpage_url, duration_secs)
+        if is_short:
+            content_type = "short"
+        elif live_status in ("is_live", "post_live"):
+            content_type = "live"
+        elif live_status == "was_live":
+            content_type = "premiere"
+        else:
+            content_type = "video"
+
+        # ── Comments (only present when get_comments=True was passed) ─────────
+        raw_comments = g("comments") or []
+
         return {
             # Identification
             "id": video_id,
@@ -235,10 +255,42 @@ class VideoExtractor:
             "availability": availability,
             "live_status": live_status,
 
+            # Content type classification
+            "is_short": is_short,
+            "content_type": content_type,   # "video" | "short" | "live" | "premiere"
+
+            # Comments (populated only when --comments flag is used)
+            "comments": self._shape_comments(raw_comments),
+            "comments_fetched": len(raw_comments),
+
             # Extractor metadata
             "_extractor": "VideoExtractor",
             "_source_url": url,
         }
+
+    def _shape_comments(self, comments: list, max_comments: int = 500) -> list[dict]:
+        """
+        Shape raw yt-dlp comment objects into clean, consistent dicts.
+
+        yt-dlp returns comments as a flat list. Top-level comments have
+        parent="root"; replies have parent set to the parent comment's ID.
+
+        We cap at max_comments to avoid excessively large JSON outputs.
+        """
+        shaped = []
+        for c in comments[:max_comments]:
+            shaped.append({
+                "id":                  c.get("id"),
+                "text":                c.get("text"),
+                "author":              c.get("author"),
+                "author_id":           c.get("author_id"),
+                "timestamp":           c.get("timestamp"),
+                "like_count":          c.get("like_count"),
+                "is_favorited":        c.get("is_favorited", False),
+                "author_is_uploader":  c.get("author_is_uploader", False),
+                "parent":              c.get("parent", "root"),
+            })
+        return shaped
 
     def _analyze_formats(self, formats: list) -> dict:
         """
