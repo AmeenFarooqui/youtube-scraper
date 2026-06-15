@@ -1260,7 +1260,25 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
     """Handle pipeline for every query in a search-batch file, runs concurrently."""
     queries = _read_query_file(args.search_batch)
     logger.info(f"Running pipeline batch for {len(queries)} queries")
-    pipeline = _build_pipeline(args)
+    # Inner pipeline uses workers=1: the outer ThreadPoolExecutor already
+    # runs args.workers pipelines concurrently, so allowing each pipeline to
+    # spawn its own workers pool would multiply concurrency by args.workers^2.
+    pipeline = PipelineExtractor(
+        search_limit=args.search_limit,
+        top_n=args.pipeline_top,
+        min_duration=args.filter_min_duration,
+        max_duration=args.filter_max_duration,
+        min_views=args.filter_min_views,
+        max_age_days=args.filter_max_age_days,
+        extract_transcript=args.transcript,
+        subtitle_lang=args.subtitle_lang,
+        output_dir=args.download_dir,
+        workers=1,
+        verbose=args.verbose,
+        get_comments=getattr(args, "comments", False),
+        comments_max=getattr(args, "comments_max", 500),
+        include_detailed_formats=getattr(args, "detailed_formats", False),
+    )
 
     results: list[dict | None] = [None] * len(queries)
 
@@ -1569,6 +1587,8 @@ def main() -> None:
     args = parser.parse_args()
 
     # ── Fast-fail: incompatible flag combinations ─────────────────────────────
+    if getattr(args, "download_video", False) and getattr(args, "download_audio", False):
+        parser.error("--download-video and --download-audio are mutually exclusive. Use one at a time.")
     if args.search and args.subtitles:
         parser.error("--search and --subtitles are incompatible. Subtitles require a single video URL (use --url).")
     if args.search and args.url:
@@ -1579,6 +1599,13 @@ def main() -> None:
         parser.error("--sentiment requires --comments to be enabled.")
     if getattr(args, "transcript", False) and not (args.search or args.search_batch):
         parser.error("--transcript requires --search or --search-batch.")
+    _output_modes = sum([
+        bool(getattr(args, "report", False)),
+        bool(getattr(args, "csv", False)),
+        bool(getattr(args, "urls_only", False)),
+    ])
+    if _output_modes > 1:
+        parser.error("--report, --csv, and --urls-only are mutually exclusive. Use only one.")
     if getattr(args, "download_subs", False) and not getattr(args, "subtitles", False):
         parser.error("--download-subs requires --subtitles.")
     if getattr(args, "sort_by", None) == "dislikes" and not getattr(args, "dislikes", False):
@@ -1620,6 +1647,32 @@ def main() -> None:
         parser.error("--filter-max-duration must be >= 0")
     if _min_dur is not None and _max_dur is not None and _min_dur > _max_dur:
         parser.error(f"--filter-min-duration ({_min_dur}) must be <= --filter-max-duration ({_max_dur})")
+    # Filtering and sorting only apply to list-producing modes.
+    # Detect single-video mode: --url set, no list-mode flags.
+    _list_mode = any([
+        args.search, getattr(args, "search_batch", None),
+        args.batch, args.channel, args.playlist,
+    ])
+    if not _list_mode and args.url:
+        _list_only_flags = [
+            ("filter_min_views",        "--filter-min-views"),
+            ("filter_max_age_days",     "--filter-max-age-days"),
+            ("filter_min_duration",     "--filter-min-duration"),
+            ("filter_max_duration",     "--filter-max-duration"),
+            ("filter_min_likes",        "--filter-min-likes"),
+            ("filter_max_likes",        "--filter-max-likes"),
+            ("filter_min_subscribers",  "--filter-min-subscribers"),
+            ("filter_max_subscribers",  "--filter-max-subscribers"),
+            ("filter_min_dislikes",     "--filter-min-dislikes"),
+            ("filter_max_dislikes",     "--filter-max-dislikes"),
+            ("filter_min_positive_ratio", "--filter-min-positive-ratio"),
+            ("filter_min_negative_ratio", "--filter-min-negative-ratio"),
+            ("no_shorts",               "--no-shorts"),
+            ("sort_by",                 "--sort-by"),
+        ]
+        for _attr, _flag in _list_only_flags:
+            if getattr(args, _attr, None) not in (None, False):
+                parser.error(f"{_flag} is only valid in list-producing modes (--search, --batch, --channel, --playlist, --search-batch).")
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)
