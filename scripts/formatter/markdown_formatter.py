@@ -348,8 +348,8 @@ class MarkdownFormatter:
 | **Total Views** | {s.get("total_views_formatted", "N/A")} |
 | **Earliest Upload** | {s.get("earliest_upload", "N/A")} |
 | **Latest Upload** | {s.get("latest_upload", "N/A")} |
-| **Shortest Video** | {s.get("shortest_video", {}).get("title", "N/A")} ({s.get("shortest_video", {}).get("duration", "N/A")}) |
-| **Longest Video** | {s.get("longest_video", {}).get("title", "N/A")} ({s.get("longest_video", {}).get("duration", "N/A")}) |"""
+| **Shortest Video** | {(s.get("shortest_video") or {}).get("title", "N/A")} ({(s.get("shortest_video") or {}).get("duration", "N/A")}) |
+| **Longest Video** | {(s.get("longest_video") or {}).get("title", "N/A")} ({(s.get("longest_video") or {}).get("duration", "N/A")}) |"""
 
     def _playlist_video_table(self, d: dict) -> str:
         videos = d.get("videos") or []

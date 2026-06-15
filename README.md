@@ -19,7 +19,7 @@ python scripts/youtube_scraper.py --url "https://www.youtube.com/watch?v=dQw4w9W
 Or with Docker (zero setup):
 ```bash
 docker compose up --build
-docker compose run --rm scraper python youtube_scraper.py --search "your topic"
+docker compose run --rm scraper --search "your topic"
 ```
 
 ---

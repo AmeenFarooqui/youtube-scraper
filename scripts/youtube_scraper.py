@@ -1163,6 +1163,20 @@ def handle_search(args: argparse.Namespace) -> dict:
         items = result["results"]
         items = _apply_shorts_filter(items, args)
 
+        # Warn when like/subscriber filters are active — flat search stubs lack these fields
+        _stub_filter_flags = [
+            (getattr(args, "filter_min_likes", None), "--filter-min-likes"),
+            (getattr(args, "filter_max_likes", None), "--filter-max-likes"),
+            (getattr(args, "filter_min_subscribers", None), "--filter-min-subscribers"),
+            (getattr(args, "filter_max_subscribers", None), "--filter-max-subscribers"),
+        ]
+        _active_stub_flags = [n for v, n in _stub_filter_flags if v is not None]
+        if _active_stub_flags:
+            logger.warning(
+                f"{', '.join(_active_stub_flags)} may exclude all results: flat search stubs "
+                "lack like_count and channel_follower_count. Use --pipeline to get full metadata."
+            )
+
         # If comments are requested, upgrade stubs to full metadata (stubs have no like_count/comments)
         if getattr(args, "comments", False):
             logger.info(f"Fetching full metadata + comments for {len(items)} search results...")
@@ -1310,6 +1324,7 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
                     summary = analyzer.analyze(item["comments"])
                     if summary:
                         item["sentiment_summary"] = summary
+        items = _apply_shorts_filter(items, args)
         items = _apply_engagement_filters(items, args)
         items = _apply_sort(items, args)
         result["videos"] = items
@@ -1599,6 +1614,8 @@ def main() -> None:
         parser.error("--sentiment requires --comments to be enabled.")
     if getattr(args, "transcript", False) and not (args.search or args.search_batch):
         parser.error("--transcript requires --search or --search-batch.")
+    if getattr(args, "transcript", False) and (args.search or args.search_batch) and not args.pipeline:
+        parser.error("--transcript requires --pipeline (e.g. --search --pipeline --transcript).")
     _output_modes = sum([
         bool(getattr(args, "report", False)),
         bool(getattr(args, "csv", False)),
@@ -1723,6 +1740,10 @@ def main() -> None:
 
         # ── Output ────────────────────────────────────────────────────────────
         handle_output(result, args, gen)
+
+        # Exit non-zero when every batch URL failed (no successful extractions)
+        if args.batch and isinstance(result, list) and result and all(r.get("error") for r in result):
+            sys.exit(1)
 
     except ScraperError as e:
         # Typed errors from our classification system

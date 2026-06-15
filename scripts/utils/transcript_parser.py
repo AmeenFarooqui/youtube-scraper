@@ -38,15 +38,15 @@ _CUE_SETTINGS  = re.compile(r"^(align|position|size|line|vertical):\S+")
 def parse_srt(text: str) -> str:
     """Parse SRT subtitle content into clean plain text."""
     cleaned: list[str] = []
-    seen: set[str] = set()
+    prev: str = ""
 
     for line in text.splitlines():
         line = line.strip()
         if not line or _SEQUENCE_NUM.match(line) or _SRT_TIMESTAMP.match(line):
             continue
         line = _HTML_TAGS.sub("", line).strip()
-        if line and line not in seen:
-            seen.add(line)
+        if line and line != prev:
+            prev = line
             cleaned.append(line)
 
     return " ".join(cleaned)
@@ -55,7 +55,7 @@ def parse_srt(text: str) -> str:
 def parse_vtt(text: str) -> str:
     """Parse WebVTT subtitle content into clean plain text."""
     cleaned: list[str] = []
-    seen: set[str] = set()
+    prev: str = ""
     in_header_block = False
 
     for line in text.splitlines():
@@ -69,8 +69,8 @@ def parse_vtt(text: str) -> str:
         if in_header_block or _VTT_TIMESTAMP.match(line) or _CUE_SETTINGS.match(line):
             continue
         line = _HTML_TAGS.sub("", line).strip()
-        if line and line not in seen:
-            seen.add(line)
+        if line and line != prev:
+            prev = line
             cleaned.append(line)
 
     return " ".join(cleaned)

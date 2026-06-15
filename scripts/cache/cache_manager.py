@@ -105,7 +105,13 @@ class CacheManager:
                 conn.commit()
                 return None
 
-            return json.loads(data_json)
+            try:
+                return json.loads(data_json)
+            except (json.JSONDecodeError, ValueError):
+                # Corrupted entry — evict and treat as cache miss
+                conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
+                conn.commit()
+                return None
 
     def put(self, video_id: str, url: str, data: dict) -> None:
         """Store (or replace) metadata for video_id."""

@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -65,6 +66,7 @@ class FailureTracker:
     def __init__(self, log_path: str | Path):
         self.log_path = Path(log_path)
         self._records: list[dict] = []
+        self._lock = threading.Lock()
 
     def record(self, error: ScraperError, url: str = "") -> None:
         """Append one failure record to the log file and memory."""
@@ -75,10 +77,11 @@ class FailureTracker:
             "failure_class": _classify(error),
             "message": error.user_message,
         }
-        self._records.append(entry)
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.log_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        with self._lock:
+            self._records.append(entry)
+            self.log_path.parent.mkdir(parents=True, exist_ok=True)
+            with self.log_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
 
     def summary(self) -> dict:
         """Return counts of recorded failures by class."""

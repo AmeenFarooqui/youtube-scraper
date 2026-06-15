@@ -205,14 +205,14 @@ class PipelineExtractor:
             view_count  = r.get("view_count")
             upload_date = r.get("upload_date")  # "YYYYMMDD" string
 
-            if self.min_duration is not None and duration is not None:
-                if duration < self.min_duration:
+            if self.min_duration is not None:
+                if duration is None or duration < self.min_duration:
                     continue
-            if self.max_duration is not None and duration is not None:
-                if duration > self.max_duration:
+            if self.max_duration is not None:
+                if duration is None or duration > self.max_duration:
                     continue
-            if self.min_views is not None and view_count is not None:
-                if view_count < self.min_views:
+            if self.min_views is not None:
+                if view_count is None or view_count < self.min_views:
                     continue
             if self.max_age_days is not None:
                 if not upload_date:
