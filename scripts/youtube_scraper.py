@@ -1368,6 +1368,10 @@ def main() -> None:
         parser.error("--filter-min-dislikes requires --dislikes.")
     if getattr(args, "filter_max_dislikes", None) is not None and not getattr(args, "dislikes", False):
         parser.error("--filter-max-dislikes requires --dislikes.")
+    for _ratio_arg in ("filter_min_positive_ratio", "filter_min_negative_ratio"):
+        _val = getattr(args, _ratio_arg, None)
+        if _val is not None and not (0.0 <= _val <= 1.0):
+            parser.error(f"--{_ratio_arg.replace('_', '-')} must be between 0.0 and 1.0, got {_val}")
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)

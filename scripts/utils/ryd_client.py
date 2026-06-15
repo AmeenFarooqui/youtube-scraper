@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import urllib.error
+import urllib.parse
 import urllib.request
 
 logger = logging.getLogger(__name__)
@@ -68,7 +69,7 @@ class RYDClient:
         if not video_id:
             return None
 
-        url = f"{_BASE_URL}/votes?videoId={video_id}"
+        url = f"{_BASE_URL}/votes?videoId={urllib.parse.quote(video_id, safe='')}"
         try:
             req = urllib.request.Request(
                 url,

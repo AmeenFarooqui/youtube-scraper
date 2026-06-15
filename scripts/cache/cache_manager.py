@@ -73,7 +73,7 @@ class CacheManager:
 
     def _connect(self) -> sqlite3.Connection:
         if self._conn is None:
-            self.cache_dir.mkdir(parents=True, exist_ok=True)
+            self.cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             self._conn = sqlite3.connect(str(self._db_path))
             self._conn.execute(_CREATE_TABLE_SQL)
             self._conn.commit()
