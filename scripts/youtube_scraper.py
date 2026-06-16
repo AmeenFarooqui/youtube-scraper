@@ -1433,6 +1433,26 @@ def _print_pipeline_results(data: dict) -> None:
 # Decides how to format and where to send the result.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _result_items(data: dict | list) -> list[dict]:
+    """
+    Extract the flat list of video/result items from any result shape.
+
+    Covers all extractor output shapes so callers don't repeat shape-detection.
+    """
+    if isinstance(data, list):
+        return data
+    if "queries" in data:          # search-batch or pipeline-batch
+        items: list[dict] = []
+        for q in data.get("queries", []):
+            items.extend(q.get("videos") or q.get("results") or [])
+        return items
+    return (
+        data.get("results")        # SearchExtractor
+        or data.get("videos")      # Pipeline/Channel/Playlist
+        or ([data] if data.get("id") or data.get("title") else [])
+    )
+
+
 def _extract_urls(data: dict | list) -> list[str]:
     """Extract YouTube URLs from any result shape. All extractors normalize to webpage_url."""
     def _u(item: dict) -> str | None:
@@ -1541,24 +1561,12 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
     if args.report:
         fmt = MarkdownFormatter()
 
-        if is_search:
-            # Format search results as a batch (list of result entries)
-            content = fmt.format_batch(data.get("results", []))
-        elif is_pipeline:
-            content = fmt.format_batch(data.get("videos", []))
-        elif is_channel:
-            content = fmt.format_batch(data.get("videos", []))
-        elif is_batch_res:
-            all_videos = []
-            for q in data.get("queries", []):
-                all_videos.extend(q.get("videos") or q.get("results") or [])
-            content = fmt.format_batch(all_videos)
-        elif is_playlist:
+        if is_playlist:
             content = fmt.format_playlist(data)
-        elif is_batch:
-            content = fmt.format_batch(data)
-        else:
+        elif not (is_search or is_pipeline or is_channel or is_batch_res or is_batch):
             content = fmt.format_video(data)
+        else:
+            content = fmt.format_batch(_result_items(data))
 
         if output_path:
             saved = fmt.save(content, output_path)
@@ -1575,26 +1583,13 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
             else:
                 print(content)
 
-        if is_search:
-            rows = data.get("results", [])
-            _csv_out(fmt.format_many(rows), rows)
-        elif is_pipeline:
-            rows = data.get("videos", [])
-            _csv_out(fmt.format_many(rows), rows)
-        elif is_channel:
-            rows = data.get("videos", [])
-            _csv_out(fmt.format_many(rows), rows)
-        elif is_batch_res:
-            rows = []
-            for q in data.get("queries", []):
-                rows.extend(q.get("videos") or q.get("results") or [])
-            _csv_out(fmt.format_many(rows), rows)
-        elif is_playlist:
+        if is_playlist:
             _csv_out(fmt.format_playlist(data), data)
-        elif is_batch:
-            _csv_out(fmt.format_many(data), data)
-        else:
+        elif not (is_search or is_pipeline or is_channel or is_batch_res or is_batch):
             _csv_out(fmt.format(data), data)
+        else:
+            rows = _result_items(data)
+            _csv_out(fmt.format_many(rows), rows)
 
     else:
         # Default: JSON

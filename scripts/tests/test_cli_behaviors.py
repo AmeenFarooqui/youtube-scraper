@@ -134,5 +134,46 @@ class TestFormatSummary(unittest.TestCase):
         self.assertEqual(cached["formats_summary"], {"total_formats": 3})
 
 
+class TestResultItems(unittest.TestCase):
+    """Tests for the _result_items(data) shape-normalizer."""
+
+    def test_list_returned_as_is(self):
+        items = [{"id": "a"}, {"id": "b"}]
+        self.assertEqual(youtube_scraper._result_items(items), items)
+
+    def test_search_extractor(self):
+        data = {"_extractor": "SearchExtractor", "results": [{"id": "x"}]}
+        self.assertEqual(youtube_scraper._result_items(data), [{"id": "x"}])
+
+    def test_pipeline_extractor(self):
+        data = {"_extractor": "PipelineExtractor", "videos": [{"id": "y"}]}
+        self.assertEqual(youtube_scraper._result_items(data), [{"id": "y"}])
+
+    def test_channel_extractor(self):
+        data = {"_extractor": "ChannelExtractor", "videos": [{"id": "z"}]}
+        self.assertEqual(youtube_scraper._result_items(data), [{"id": "z"}])
+
+    def test_playlist_extractor(self):
+        data = {"_extractor": "PlaylistExtractor", "videos": [{"id": "p"}]}
+        self.assertEqual(youtube_scraper._result_items(data), [{"id": "p"}])
+
+    def test_batch_queries_flattened(self):
+        data = {
+            "total_queries": 2,
+            "queries": [
+                {"results": [{"id": "a"}, {"id": "b"}]},
+                {"videos": [{"id": "c"}]},
+            ],
+        }
+        self.assertEqual([i["id"] for i in youtube_scraper._result_items(data)], ["a", "b", "c"])
+
+    def test_single_video_dict(self):
+        data = {"_extractor": "VideoExtractor", "id": "abc", "title": "T"}
+        self.assertEqual(youtube_scraper._result_items(data), [data])
+
+    def test_empty_list(self):
+        self.assertEqual(youtube_scraper._result_items([]), [])
+
+
 if __name__ == "__main__":
     unittest.main()
