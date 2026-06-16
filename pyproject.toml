@@ -52,6 +52,11 @@ Homepage = "https://github.com/AmeenFarooqui/youtube-scraper"
 Repository = "https://github.com/AmeenFarooqui/youtube-scraper.git"
 "Bug Tracker" = "https://github.com/AmeenFarooqui/youtube-scraper/issues"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
 [project.scripts]
 youtube-scraper = "scripts.youtube_scraper:main"
 

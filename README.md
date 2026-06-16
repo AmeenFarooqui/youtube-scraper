@@ -147,11 +147,7 @@ python3 -c "import yt_dlp; print('yt-dlp version:', yt_dlp.version.__version__)"
 
 ## Usage
 
-All commands run from the `scripts/` directory, or pass the full path:
-
-```bash
-cd youtube-scraper/scripts
-```
+All commands run from the repo root. The entry point is `scripts/youtube_scraper.py`:
 
 ---
 
@@ -228,7 +224,7 @@ Limit results and save:
 python youtube_scraper.py \
   --channel "https://www.youtube.com/@channelname" \
   --channel-tab videos \
-  --search-limit 50 \
+  --max-videos 50 \
   --output channel.json
 ```
 
@@ -703,21 +699,27 @@ For batch runs: failed URLs are recorded in the output and optionally written to
 
 ## Running Tests
 
+Install dev dependencies first (pytest is not in the default install):
+
 ```bash
-cd youtube-scraper/scripts
+pip install pytest
+```
 
-# Run all tests
-python -m pytest tests/ -v
+Run all tests:
+```bash
+# From repo root
+python -m pytest scripts/tests/ -v
 
-# Run specific test file
-python -m pytest tests/test_validators.py -v
-python -m pytest tests/test_helpers.py -v
-python -m pytest tests/test_formatters.py -v
+# Or without pytest (stdlib only):
+python -m unittest discover -s scripts/tests -p "test_*.py" -v
+```
 
-# Or run directly (no pytest needed)
-python tests/test_validators.py
-python tests/test_helpers.py
-python tests/test_formatters.py
+Run a specific file:
+```bash
+python -m pytest scripts/tests/test_validators.py -v
+python -m pytest scripts/tests/test_helpers.py -v
+python -m pytest scripts/tests/test_formatters.py -v
+python -m pytest scripts/tests/test_cli_behaviors.py -v
 ```
 
 Tests cover:
@@ -770,16 +772,20 @@ python youtube_scraper.py \
 
 ### Like count is missing from search results
 
-Search results are stubs — `like_count` is often `None`. Filters like `--filter-min-likes` will silently drop all results because the field doesn't exist in search stubs.
+Search results are stubs — `like_count` is often `None`. If you use
+`--filter-min-likes` without `--pipeline` in `--search` mode, the CLI
+rejects the combination at startup with a clear error message. In
+channel/playlist/batch mode where the field may be `None`, a `WARNING`
+is logged listing how many items were excluded.
 
-**Fix:** Use `--pipeline` to fetch full metadata before filtering. Pipeline mode makes one full yt-dlp call per top result, so `like_count` is populated.
+**Fix:** Use `--pipeline` to populate `like_count` before filtering:
 
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "topic" \
   --pipeline \
   --pipeline-top 10 \
-  --filter-min-likes 1000   # only works reliably with --pipeline
+  --filter-min-likes 1000
 ```
 
 ---
@@ -845,7 +851,7 @@ The Return YouTube Dislike API may be unavailable or the video may be too new. F
 | Engagement filtering + sorting | Done | — | — |
 | Failure tracking (`--failure-log`) | Done | — | — |
 | Docker support | Done | — | — |
-| Transcript text extraction | Pending | Low | High |
+| Transcript text extraction (`--transcript`) | Done | — | — |
 | Keyword/topic extraction (NLP) | Pending | Medium | Medium |
 | FastAPI REST API wrapper | Pending | Medium | High |
 | Streamlit web UI | Pending | Medium | Medium |

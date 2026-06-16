@@ -1,7 +1,7 @@
 ---
 name: youtube-scraper
 description: >
-  Production-grade YouTube scraper and metadata extraction system using yt-dlp.
+  Feature-complete YouTube scraper and metadata extraction system using yt-dlp.
   Use this skill whenever the user wants to scrape YouTube content, extract video
   metadata, search YouTube by keyword, build a research pipeline (search → NotebookLM
   → analysis → deliverables), analyze playlists, process batch YouTube URLs,
@@ -27,7 +27,7 @@ compatibility:
 
 # YouTube Scraper Skill
 
-A production-style YouTube scraper using yt-dlp. Extracts rich structured metadata,
+A feature-complete YouTube scraper using yt-dlp. Extracts rich structured metadata,
 searches YouTube by keyword, and feeds results into NotebookLM for AI analysis.
 Downloading is NEVER the default.
 
