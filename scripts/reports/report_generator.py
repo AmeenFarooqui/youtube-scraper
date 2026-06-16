@@ -1,26 +1,19 @@
 """
 report_generator.py
 -------------------
-High-level orchestrator that ties extractors and formatters together
-to produce complete output reports.
+Terminal display layer — prints concise human-readable summaries to the
+console after each extraction operation.
 
-WHY A SEPARATE REPORT GENERATOR?
-  The CLI (youtube_scraper.py) handles argument parsing.
-  The extractors handle data fetching.
-  The formatters handle rendering.
+WHAT THIS MODULE DOES:
+  - Prints a video summary panel (title, stats, available formats)
+  - Prints a playlist summary table
+  - Prints download result confirmation
+  - Prints save-to-file confirmation with path
 
-  But someone has to:
-    - Decide which extractor to use based on URL type
-    - Decide which formatter to use based on --output / --csv / --report flags
-    - Print a summary to the terminal (separate from saved output)
-    - Handle the output path
-
-  That's what this module does. It's the glue layer.
-
-TERMINAL SUMMARY:
-  After any operation, we print a concise human-readable summary to the
-  terminal using rich (if available) or plain text. This is separate from
-  the saved output and is always shown regardless of output format.
+WHAT THIS MODULE DOES NOT DO:
+  Routing, extractor selection, formatter selection, and file I/O are all
+  handled in youtube_scraper.py. This class only handles the terminal-display
+  side — shown after every run regardless of --output format.
 """
 
 from __future__ import annotations
@@ -42,12 +35,14 @@ OutputFormat = Literal["json", "csv", "markdown"]
 
 class ReportGenerator:
     """
-    Orchestrates extraction + formatting + terminal display.
+    Prints terminal summaries for completed extraction operations.
 
     Usage:
         gen = ReportGenerator()
-        gen.run_video(url, output_path="out.json", fmt="json")
-        gen.run_playlist(url, output_path="playlist.md", fmt="markdown")
+        gen.print_video_summary(data)
+        gen.print_playlist_summary(data)
+        gen.print_save_confirmation(path, fmt)
+        gen.print_download_result(data)
     """
 
     def __init__(self, verbose: bool = False):
