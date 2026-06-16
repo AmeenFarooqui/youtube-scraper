@@ -994,7 +994,6 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
     max_c = getattr(args, "comments_max", 500)
     _verbose = args.verbose
     detailed_formats = getattr(args, "detailed_formats", False)
-    results: list[dict | None] = [None] * len(stubs)
     # Use cache only when not fetching comments/formats (those aren't cached in stubs)
     cache = _make_cache(args) if not get_comments and not detailed_formats else None
 
@@ -1030,12 +1029,7 @@ def _fetch_full_metadata(stubs: list[dict], args: argparse.Namespace) -> list[di
             logger.warning(f"Failed full fetch for {url}: {e.user_message}")
             return i, stub  # fall back to original stub
 
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {executor.submit(_fetch, (i, s)): i for i, s in enumerate(stubs)}
-        for future in as_completed(futures):
-            i, result = future.result()
-            results[i] = result
-
+    results = _run_ordered(stubs, workers=args.workers, fn=_fetch)
     return [r for r in results if r is not None]
 
 
@@ -1442,39 +1436,7 @@ def _extract_urls(data: dict | list) -> list[str]:
     """Extract YouTube URLs from any result shape. All extractors normalize to webpage_url."""
     def _u(item: dict) -> str | None:
         return item.get("webpage_url") or item.get("url")
-
-    urls = []
-    if isinstance(data, list):
-        for item in data:
-            if u := _u(item):
-                urls.append(u)
-    elif isinstance(data, dict):
-        _ext = data.get("_extractor", "")
-        if _ext == "SearchExtractor":
-            for r in data.get("results", []):
-                if u := _u(r):
-                    urls.append(u)
-        elif _ext == "PipelineExtractor":
-            for v in data.get("videos", []):
-                if u := _u(v):
-                    urls.append(u)
-        elif _ext == "ChannelExtractor":
-            for v in data.get("videos", []) or data.get("entries", []):
-                if v and (u := _u(v)):
-                    urls.append(u)
-        elif "queries" in data:
-            for q in data.get("queries", []):
-                for item in q.get("videos") or q.get("results") or []:
-                    if u := _u(item):
-                        urls.append(u)
-        elif _ext == "PlaylistExtractor":
-            for v in data.get("videos", []):
-                if v and (u := _u(v)):
-                    urls.append(u)
-        else:
-            if u := _u(data):
-                urls.append(u)
-    return urls
+    return [u for item in _result_items(data) if (u := _u(item))]
 
 
 def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenerator) -> None:
