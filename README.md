@@ -154,13 +154,13 @@ All commands run from the repo root. The entry point is `scripts/youtube_scraper
 ### Search YouTube by keyword
 
 ```bash
-python youtube_scraper.py --search "claude code tutorial" --search-limit 10
+python scripts/youtube_scraper.py --search "claude code tutorial" --search-limit 10
 ```
 
 ### Search with filters (recent, high-engagement)
 
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "agentic AI" \
   --search-limit 20 \
   --filter-min-views 5000 \
@@ -171,7 +171,7 @@ python youtube_scraper.py \
 ### Search → get URLs only (for NotebookLM)
 
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "autoresearch karpathy" \
   --search-limit 15 \
   --urls-only \
@@ -188,7 +188,7 @@ The recommended end-to-end workflow:
 
 ```bash
 # Step 1: search YouTube, save clean URL list
-python youtube_scraper.py --search "topic" --search-limit 15 --urls-only --output urls.txt
+python scripts/youtube_scraper.py --search "topic" --search-limit 15 --urls-only --output urls.txt
 
 # Step 2: create a NotebookLM notebook
 notebooklm create "Topic Research" --json   # note the notebook ID
@@ -210,18 +210,18 @@ notebooklm generate infographic "Summary" --notebook NOTEBOOK_ID --orientation p
 
 Scrape a channel's video tab:
 ```bash
-python youtube_scraper.py --channel "https://www.youtube.com/@channelname"
+python scripts/youtube_scraper.py --channel "https://www.youtube.com/@channelname"
 ```
 
 Specify which tab (`videos`, `shorts`, `streams`, `all`):
 ```bash
-python youtube_scraper.py --channel "https://www.youtube.com/@channelname" --channel-tab shorts
-python youtube_scraper.py --channel "https://www.youtube.com/@channelname" --channel-tab all
+python scripts/youtube_scraper.py --channel "https://www.youtube.com/@channelname" --channel-tab shorts
+python scripts/youtube_scraper.py --channel "https://www.youtube.com/@channelname" --channel-tab all
 ```
 
 Limit results and save:
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --channel "https://www.youtube.com/@channelname" \
   --channel-tab videos \
   --max-videos 50 \
@@ -234,12 +234,12 @@ python youtube_scraper.py \
 
 Fetch top comments for a video:
 ```bash
-python youtube_scraper.py --url "URL" --comments
+python scripts/youtube_scraper.py --url "URL" --comments
 ```
 
 Control how many:
 ```bash
-python youtube_scraper.py --url "URL" --comments --comments-max 100
+python scripts/youtube_scraper.py --url "URL" --comments --comments-max 100
 ```
 
 ---
@@ -248,12 +248,12 @@ python youtube_scraper.py --url "URL" --comments --comments-max 100
 
 Enrich results with estimated dislikes:
 ```bash
-python youtube_scraper.py --url "URL" --dislikes
+python scripts/youtube_scraper.py --url "URL" --dislikes
 ```
 
 Works in search and batch modes too:
 ```bash
-python youtube_scraper.py --search "topic" --search-limit 10 --dislikes
+python scripts/youtube_scraper.py --search "topic" --search-limit 10 --dislikes
 ```
 
 ---
@@ -262,7 +262,7 @@ python youtube_scraper.py --search "topic" --search-limit 10 --dislikes
 
 Run VADER sentiment on fetched comments:
 ```bash
-python youtube_scraper.py --url "URL" --comments --sentiment
+python scripts/youtube_scraper.py --url "URL" --comments --sentiment
 ```
 
 Returns `positive_pct`, `negative_pct`, `neutral_pct`, `compound_avg`, `total_analyzed` in the output.
@@ -274,16 +274,16 @@ Returns `positive_pct`, `negative_pct`, `neutral_pct`, `compound_avg`, `total_an
 Sort by any engagement metric:
 ```bash
 # Sort search results by view count (descending, default)
-python youtube_scraper.py --search "topic" --search-limit 20 --sort-by views
+python scripts/youtube_scraper.py --search "topic" --search-limit 20 --sort-by views
 
 # Sort by like count, ascending
-python youtube_scraper.py --search "topic" --search-limit 20 --sort-by likes --sort-order asc
+python scripts/youtube_scraper.py --search "topic" --search-limit 20 --sort-by likes --sort-order asc
 
 # Sort by estimated dislikes (requires --dislikes)
-python youtube_scraper.py --search "topic" --dislikes --sort-by dislikes
+python scripts/youtube_scraper.py --search "topic" --dislikes --sort-by dislikes
 
 # Sort by positive comment ratio (requires --comments --sentiment)
-python youtube_scraper.py --search "topic" --comments --sentiment --sort-by positive_ratio
+python scripts/youtube_scraper.py --search "topic" --comments --sentiment --sort-by positive_ratio
 ```
 
 Available sort fields: `views`, `likes`, `dislikes`, `subscribers`, `date`, `duration`, `positive_ratio`, `negative_ratio`
@@ -294,7 +294,7 @@ Available sort fields: `views`, `likes`, `dislikes`, `subscribers`, `date`, `dur
 
 Filter by subscriber count:
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "topic" \
   --filter-min-subscribers 100000 \
   --filter-max-subscribers 5000000
@@ -302,17 +302,17 @@ python youtube_scraper.py \
 
 Filter by like count:
 ```bash
-python youtube_scraper.py --search "topic" --filter-min-likes 1000
+python scripts/youtube_scraper.py --search "topic" --filter-min-likes 1000
 ```
 
 Filter by dislike count (requires `--dislikes`):
 ```bash
-python youtube_scraper.py --search "topic" --dislikes --filter-max-dislikes 500
+python scripts/youtube_scraper.py --search "topic" --dislikes --filter-max-dislikes 500
 ```
 
 Filter by comment sentiment ratio (requires `--comments --sentiment`, values 0.0–1.0):
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "topic" \
   --comments --sentiment \
   --filter-min-positive-ratio 0.7
@@ -323,7 +323,7 @@ python youtube_scraper.py \
 ### Pipeline mode (search → filter → full metadata)
 
 ```bash
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "claude code" \
   --search-limit 20 \
   --pipeline \
@@ -339,119 +339,119 @@ python youtube_scraper.py \
 ### Single video (default JSON output)
 
 ```bash
-python youtube_scraper.py --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+python scripts/youtube_scraper.py --url "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 ```
 
 ### Save JSON to file
 
 ```bash
-python youtube_scraper.py --url "URL" --output results.json
+python scripts/youtube_scraper.py --url "URL" --output results.json
 ```
 
 ### Export CSV (for spreadsheets)
 
 ```bash
-python youtube_scraper.py --url "URL" --csv --output results.csv
+python scripts/youtube_scraper.py --url "URL" --csv --output results.csv
 ```
 
 ### Generate Markdown report
 
 ```bash
-python youtube_scraper.py --url "URL" --report --output report.md
+python scripts/youtube_scraper.py --url "URL" --report --output report.md
 ```
 
 ### Analyze a playlist
 
 ```bash
-python youtube_scraper.py --playlist "https://www.youtube.com/playlist?list=PL..."
+python scripts/youtube_scraper.py --playlist "https://www.youtube.com/playlist?list=PL..."
 ```
 
 Fast mode (default) — gets title/duration/views per video without loading each page individually.
 
 For full per-video metadata (slow):
 ```bash
-python youtube_scraper.py --playlist "URL" --full-playlist
+python scripts/youtube_scraper.py --playlist "URL" --full-playlist
 ```
 
 ### Get only URLs from any mode
 
 ```bash
 # From search:
-python youtube_scraper.py --search "topic" --search-limit 10 --urls-only
+python scripts/youtube_scraper.py --search "topic" --search-limit 10 --urls-only
 
 # From batch:
-python youtube_scraper.py --batch existing_urls.txt --urls-only
+python scripts/youtube_scraper.py --batch existing_urls.txt --urls-only
 
 # From playlist:
-python youtube_scraper.py --playlist "https://www.youtube.com/playlist?list=PL..." --urls-only
+python scripts/youtube_scraper.py --playlist "https://www.youtube.com/playlist?list=PL..." --urls-only
 ```
 
 ### Batch process from a file
 
 ```bash
 # urls.txt: one YouTube URL per line, # = comment
-python youtube_scraper.py --batch examples/urls.txt --output batch.json
+python scripts/youtube_scraper.py --batch examples/urls.txt --output batch.json
 ```
 
 With concurrent workers (default: 3):
 ```bash
-python youtube_scraper.py --batch urls.txt --workers 5
+python scripts/youtube_scraper.py --batch urls.txt --workers 5
 ```
 
 Log failures to a file:
 ```bash
-python youtube_scraper.py --batch urls.txt --failure-log failures.jsonl
+python scripts/youtube_scraper.py --batch urls.txt --failure-log failures.jsonl
 ```
 
 ### Cache control
 
 Results are cached in SQLite for 24 hours by default. To bypass:
 ```bash
-python youtube_scraper.py --url "URL" --no-cache
+python scripts/youtube_scraper.py --url "URL" --no-cache
 ```
 
 ### Check subtitle availability
 
 ```bash
-python youtube_scraper.py --url "URL" --subtitles
+python scripts/youtube_scraper.py --url "URL" --subtitles
 ```
 
 Download subtitle files (SRT format, English):
 ```bash
-python youtube_scraper.py --url "URL" --subtitles --download-subs --subtitle-lang en
+python scripts/youtube_scraper.py --url "URL" --subtitles --download-subs --subtitle-lang en
 ```
 
 Other languages and formats:
 ```bash
-python youtube_scraper.py --url "URL" --subtitles --subtitle-lang es --subtitle-format vtt
+python scripts/youtube_scraper.py --url "URL" --subtitles --subtitle-lang es --subtitle-format vtt
 ```
 
 ### Download audio only (MP3)
 
 ```bash
-python youtube_scraper.py --url "URL" --download-audio
+python scripts/youtube_scraper.py --url "URL" --download-audio
 ```
 
 Custom format (WAV, FLAC, M4A, AAC):
 ```bash
-python youtube_scraper.py --url "URL" --download-audio --audio-format wav
+python scripts/youtube_scraper.py --url "URL" --download-audio --audio-format wav
 ```
 
 ### Download video (MP4)
 
 ```bash
-python youtube_scraper.py --url "URL" --download-video
+python scripts/youtube_scraper.py --url "URL" --download-video
 ```
 
 Custom format and directory:
 ```bash
-python youtube_scraper.py --url "URL" --download-video --video-format mkv --download-dir ~/Videos
+python scripts/youtube_scraper.py --url "URL" --download-video --video-format mkv --download-dir ~/Videos
 ```
 
 ### Verbose mode (see what yt-dlp is doing)
 
 ```bash
-python youtube_scraper.py --url "URL" --verbose
+python scripts/youtube_scraper.py --url "URL" --verbose
 ```
 
 ---
@@ -616,7 +616,7 @@ youtube-scraper/
     │   └── markdown_formatter.py  # Human-readable Markdown reports
     │
     ├── reports/
-    │   └── report_generator.py    # Glue: orchestrates extraction + formatting + terminal display
+    │   └── report_generator.py    # Terminal display layer — prints concise human-readable summaries
     │
     ├── cache/                  # SQLITE CACHE layer
     │   └── cache_manager.py       # 24h TTL cache, lazy eviction, mode 0o700
@@ -726,6 +726,7 @@ Tests cover:
 - URL validation (video, playlist, channel, invalid URLs)
 - Helper functions (formatting, safe access)
 - Formatters (JSON, CSV, Markdown output)
+- CLI internal helpers (`_result_items`, `_run_ordered`, `_post_process_items`)
 
 No network calls are made in tests — all use mock data.
 
@@ -741,7 +742,7 @@ This means the one-command version works, but is slower than a plain search:
 
 ```bash
 # Works — fetches full metadata + comments for all 10 results concurrently
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "web scraper tutorial python" \
   --search-limit 10 \
   --dislikes \
@@ -755,7 +756,7 @@ For large search limits, use `--pipeline` with `--pipeline-top` to limit full fe
 
 ```bash
 # More efficient: search 20, filter by views, fully extract top 5 with comments
-python youtube_scraper.py \
+python scripts/youtube_scraper.py \
   --search "web scraper tutorial python" \
   --search-limit 20 \
   --pipeline \
