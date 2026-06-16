@@ -175,5 +175,32 @@ class TestResultItems(unittest.TestCase):
         self.assertEqual(youtube_scraper._result_items([]), [])
 
 
+class TestRunOrdered(unittest.TestCase):
+    """Tests for the _run_ordered concurrent ordered-map helper."""
+
+    def test_results_in_original_order(self):
+        import time, random
+
+        def slow_fn(index_item):
+            i, val = index_item
+            time.sleep(random.uniform(0, 0.02))
+            return i, val * 10
+
+        results = youtube_scraper._run_ordered([1, 2, 3, 4, 5], workers=5, fn=slow_fn)
+        self.assertEqual(results, [10, 20, 30, 40, 50])
+
+    def test_all_items_processed(self):
+        def identity(index_item):
+            i, val = index_item
+            return i, val
+
+        results = youtube_scraper._run_ordered(["a", "b", "c"], workers=2, fn=identity)
+        self.assertEqual(results, ["a", "b", "c"])
+
+    def test_empty_input(self):
+        results = youtube_scraper._run_ordered([], workers=4, fn=lambda x: x)
+        self.assertEqual(results, [])
+
+
 if __name__ == "__main__":
     unittest.main()

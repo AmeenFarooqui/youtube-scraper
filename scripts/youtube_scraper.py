@@ -1232,13 +1232,30 @@ def handle_search(args: argparse.Namespace) -> dict:
     return result
 
 
+def _run_ordered(items: list, workers: int, fn) -> list:
+    """
+    Run fn(i, item) concurrently for each item, returning results in original order.
+
+    fn must accept a (int, Any) tuple and return a (int, result) tuple.
+    The integer index is used to reassemble results in submission order
+    regardless of which futures complete first.
+    """
+    if not items:
+        return []
+    results = [None] * len(items)
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(fn, (i, item)): i for i, item in enumerate(items)}
+        for future in as_completed(futures):
+            i, result = future.result()
+            results[i] = result
+    return results
+
+
 def handle_search_batch(args: argparse.Namespace) -> dict:
     """Handle batch search — reads one query per line from a file, runs concurrently."""
     queries = _read_query_file(args.search_batch)
     logger.info(f"Running batch search for {len(queries)} queries")
     extractor = SearchExtractor(max_results=args.search_limit, verbose=args.verbose)
-
-    results: list[dict | None] = [None] * len(queries)
 
     def _search(index_query: tuple[int, str]) -> tuple[int, dict]:
         i, q = index_query
@@ -1248,11 +1265,7 @@ def handle_search_batch(args: argparse.Namespace) -> dict:
             logger.warning(f"Search failed for {q!r}: {e.user_message}")
             return i, {"query": q, "error": e.user_message, "results": []}
 
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {executor.submit(_search, (i, q)): i for i, q in enumerate(queries)}
-        for future in as_completed(futures):
-            i, result = future.result()
-            results[i] = result
+    results = _run_ordered(queries, workers=args.workers, fn=_search)
 
     # Apply the same post-processing as handle_search, per query
     analyzer = SentimentAnalyzer() if getattr(args, "sentiment", False) else None
@@ -1325,8 +1338,6 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
         include_detailed_formats=getattr(args, "detailed_formats", False),
     )
 
-    results: list[dict | None] = [None] * len(queries)
-
     def _run(index_query: tuple[int, str]) -> tuple[int, dict]:
         i, q = index_query
         try:
@@ -1335,11 +1346,7 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
             logger.warning(f"Pipeline failed for {q!r}: {e.user_message}")
             return i, {"query": q, "error": e.user_message, "videos": []}
 
-    with ThreadPoolExecutor(max_workers=args.workers) as executor:
-        futures = {executor.submit(_run, (i, q)): i for i, q in enumerate(queries)}
-        for future in as_completed(futures):
-            i, result = future.result()
-            results[i] = result
+    results = _run_ordered(queries, workers=args.workers, fn=_run)
 
     # Apply the same post-processing as handle_pipeline, per query
     analyzer = SentimentAnalyzer() if getattr(args, "sentiment", False) else None
