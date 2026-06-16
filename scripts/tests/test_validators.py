@@ -3,8 +3,8 @@ test_validators.py
 ------------------
 Unit tests for URL validation logic.
 
-Run with: python -m pytest tests/ -v
-Or:        python tests/test_validators.py
+Run with: python -m pytest scripts/tests/ -v  (from repo root)
+Or:        python scripts/tests/test_validators.py
 """
 
 import sys
