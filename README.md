@@ -1,6 +1,11 @@
-# YouTube Scraper
+# YouTube Scraper — Python CLI for YouTube Data Extraction
 
-> Python CLI to scrape YouTube video metadata, comments, subtitles, channels, and playlists — powered by **yt-dlp**. No API key required.
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/github/license/AmeenFarooqui/youtube-scraper)](LICENSE)
+[![Powered by yt-dlp](https://img.shields.io/badge/powered%20by-yt--dlp-red)](https://github.com/yt-dlp/yt-dlp)
+[![No API Key](https://img.shields.io/badge/YouTube%20API%20key-not%20required-brightgreen)](#)
+
+> Open-source Python CLI to scrape YouTube video metadata, comments, subtitles, channels, and playlists — powered by **yt-dlp**. No YouTube API key required. A fast, scriptable alternative to the YouTube Data API.
 
 ## Quickstart
 
