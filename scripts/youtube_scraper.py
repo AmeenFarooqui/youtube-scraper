@@ -697,6 +697,54 @@ def handle_video(args: argparse.Namespace) -> dict:
     return result
 
 
+def _post_process_items(
+    items: list[dict],
+    args: argparse.Namespace,
+    *,
+    apply_shorts: bool = True,
+    fetch_comments: bool = False,
+    shorts_first: bool = True,
+) -> list[dict]:
+    """
+    Shared post-processing pipeline for all list-producing handlers.
+
+    Step order (all options, shorts_first=True):
+      1. Shorts filter
+      2. Full metadata + comments fetch
+      3. Dislike enrichment (RYD API)
+      4. Comment sentiment (VADER)
+      5. Engagement filters
+      6. Sort
+
+    Parameters:
+        apply_shorts:    Apply --no-shorts / --shorts-only. False for handle_pipeline
+                         (pipeline already filters internally).
+        fetch_comments:  Upgrade stubs to full metadata when --comments is set.
+                         False for pipeline/batch (already full metadata).
+        shorts_first:    True = shorts filter before enrichment (default).
+                         False = shorts filter after enrichment (batch modes).
+    """
+    if apply_shorts and shorts_first:
+        items = _apply_shorts_filter(items, args)
+    if fetch_comments and getattr(args, "comments", False):
+        logger.info(f"Fetching full metadata + comments for {len(items)} items...")
+        items = _fetch_full_metadata(items, args)
+    if getattr(args, "dislikes", False):
+        items = _enrich_dislikes(items, workers=args.workers)
+    if getattr(args, "sentiment", False):
+        analyzer = SentimentAnalyzer()
+        for item in items:
+            if item.get("comments"):
+                summary = analyzer.analyze(item["comments"])
+                if summary:
+                    item["sentiment_summary"] = summary
+    if apply_shorts and not shorts_first:
+        items = _apply_shorts_filter(items, args)
+    items = _apply_engagement_filters(items, args)
+    items = _apply_sort(items, args)
+    return items
+
+
 def handle_playlist(args: argparse.Namespace) -> dict:
     """Handle playlist extraction."""
     url = args.playlist
@@ -709,24 +757,10 @@ def handle_playlist(args: argparse.Namespace) -> dict:
     result = extractor.extract(url)
 
     if result.get("videos"):
-        items = result["videos"]
-        items = _apply_shorts_filter(items, args)
-        if getattr(args, "comments", False):
-            logger.info(f"Fetching full metadata + comments for {len(items)} playlist videos...")
-            items = _fetch_full_metadata(items, args)
-        if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items, workers=args.workers)
-        if getattr(args, "sentiment", False):
-            analyzer = SentimentAnalyzer()
-            for item in items:
-                if item.get("comments"):
-                    summary = analyzer.analyze(item["comments"])
-                    if summary:
-                        item["sentiment_summary"] = summary
-        items = _apply_engagement_filters(items, args)
-        items = _apply_sort(items, args)
-        result["videos"] = items
-        result["total_videos"] = len(items)
+        result["videos"] = _post_process_items(
+            result["videos"], args, apply_shorts=True, fetch_comments=True
+        )
+        result["total_videos"] = len(result["videos"])
 
     return result
 
@@ -846,20 +880,9 @@ def handle_batch(args: argparse.Namespace) -> list[dict]:
     items = [r for r in results if r is not None]
 
     # Post-processing: enrich, filter, sort
-    if getattr(args, "dislikes", False):
-        items = _enrich_dislikes(items, workers=args.workers)
-
-    if getattr(args, "sentiment", False):
-        sentiment_analyzer = SentimentAnalyzer()
-        for item in items:
-            if item.get("comments"):
-                summary = sentiment_analyzer.analyze(item["comments"])
-                if summary:
-                    item["sentiment_summary"] = summary
-
-    items = _apply_shorts_filter(items, args)
-    items = _apply_engagement_filters(items, args)
-    items = _apply_sort(items, args)
+    items = _post_process_items(
+        items, args, apply_shorts=True, fetch_comments=False, shorts_first=False
+    )
 
     return items
 
@@ -1177,24 +1200,10 @@ def handle_channel(args: argparse.Namespace) -> dict:
     result = extractor.extract(args.channel)
 
     if result.get("videos"):
-        items = result["videos"]
-        items = _apply_shorts_filter(items, args)
-        if getattr(args, "comments", False):
-            logger.info(f"Fetching full metadata + comments for {len(items)} channel videos...")
-            items = _fetch_full_metadata(items, args)
-        if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items, workers=args.workers)
-        if getattr(args, "sentiment", False):
-            analyzer = SentimentAnalyzer()
-            for item in items:
-                if item.get("comments"):
-                    summary = analyzer.analyze(item["comments"])
-                    if summary:
-                        item["sentiment_summary"] = summary
-        items = _apply_engagement_filters(items, args)
-        items = _apply_sort(items, args)
-        result["videos"] = items
-        result["total_videos"] = len(items)
+        result["videos"] = _post_process_items(
+            result["videos"], args, apply_shorts=True, fetch_comments=True
+        )
+        result["total_videos"] = len(result["videos"])
 
     return result
 
@@ -1205,29 +1214,10 @@ def handle_search(args: argparse.Namespace) -> dict:
     result = extractor.search(args.search)
 
     if result.get("results"):
-        items = result["results"]
-        items = _apply_shorts_filter(items, args)
-
-        # If comments are requested, upgrade stubs to full metadata (stubs have no like_count/comments)
-        if getattr(args, "comments", False):
-            logger.info(f"Fetching full metadata + comments for {len(items)} search results...")
-            items = _fetch_full_metadata(items, args)
-
-        if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items, workers=args.workers)
-
-        if getattr(args, "sentiment", False):
-            analyzer = SentimentAnalyzer()
-            for item in items:
-                if item.get("comments"):
-                    summary = analyzer.analyze(item["comments"])
-                    if summary:
-                        item["sentiment_summary"] = summary
-
-        items = _apply_engagement_filters(items, args)
-        items = _apply_sort(items, args)
-        result["results"] = items
-        result["total_results"] = len(items)
+        result["results"] = _post_process_items(
+            result["results"], args, apply_shorts=True, fetch_comments=True
+        )
+        result["total_results"] = len(result["results"])
 
     return result
 
@@ -1267,27 +1257,13 @@ def handle_search_batch(args: argparse.Namespace) -> dict:
 
     results = _run_ordered(queries, workers=args.workers, fn=_search)
 
-    # Apply the same post-processing as handle_search, per query
-    analyzer = SentimentAnalyzer() if getattr(args, "sentiment", False) else None
     for result in results:
         if not result or not result.get("results"):
             continue
-        items = result["results"]
-        items = _apply_shorts_filter(items, args)
-        if getattr(args, "comments", False):
-            items = _fetch_full_metadata(items, args)
-        if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items, workers=args.workers)
-        if analyzer:
-            for item in items:
-                if item.get("comments"):
-                    summary = analyzer.analyze(item["comments"])
-                    if summary:
-                        item["sentiment_summary"] = summary
-        items = _apply_engagement_filters(items, args)
-        items = _apply_sort(items, args)
-        result["results"] = items
-        result["total_results"] = len(items)
+        result["results"] = _post_process_items(
+            result["results"], args, apply_shorts=True, fetch_comments=True
+        )
+        result["total_results"] = len(result["results"])
 
     return {"total_queries": len(queries), "queries": [r for r in results if r is not None]}
 
@@ -1297,19 +1273,9 @@ def handle_pipeline(args: argparse.Namespace) -> dict:
     result = _build_pipeline(args).run(args.search)
 
     if result.get("videos"):
-        items = result["videos"]
-        if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items, workers=args.workers)
-        if getattr(args, "sentiment", False):
-            analyzer = SentimentAnalyzer()
-            for item in items:
-                if item.get("comments"):
-                    summary = analyzer.analyze(item["comments"])
-                    if summary:
-                        item["sentiment_summary"] = summary
-        items = _apply_engagement_filters(items, args)
-        items = _apply_sort(items, args)
-        result["videos"] = items
+        result["videos"] = _post_process_items(
+            result["videos"], args, apply_shorts=False, fetch_comments=False
+        )
 
     return result
 
@@ -1348,24 +1314,12 @@ def handle_pipeline_batch(args: argparse.Namespace) -> dict:
 
     results = _run_ordered(queries, workers=args.workers, fn=_run)
 
-    # Apply the same post-processing as handle_pipeline, per query
-    analyzer = SentimentAnalyzer() if getattr(args, "sentiment", False) else None
     for result in results:
         if not result or not result.get("videos"):
             continue
-        items = result["videos"]
-        if getattr(args, "dislikes", False):
-            items = _enrich_dislikes(items, workers=args.workers)
-        if analyzer:
-            for item in items:
-                if item.get("comments"):
-                    summary = analyzer.analyze(item["comments"])
-                    if summary:
-                        item["sentiment_summary"] = summary
-        items = _apply_shorts_filter(items, args)
-        items = _apply_engagement_filters(items, args)
-        items = _apply_sort(items, args)
-        result["videos"] = items
+        result["videos"] = _post_process_items(
+            result["videos"], args, apply_shorts=True, fetch_comments=False, shorts_first=False
+        )
 
     return {"total_queries": len(queries), "queries": [r for r in results if r is not None]}
 

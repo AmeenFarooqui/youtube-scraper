@@ -202,5 +202,81 @@ class TestRunOrdered(unittest.TestCase):
         self.assertEqual(results, [])
 
 
+class TestPostProcessItems(unittest.TestCase):
+    """Tests for _post_process_items — verifies call order and parameter routing."""
+
+    def _args(self, **kwargs):
+        defaults = dict(
+            comments=False, dislikes=False, sentiment=False,
+            no_shorts=False, shorts_only=False, workers=2,
+            filter_min_views=None, filter_max_views=None,
+            filter_min_likes=None, filter_max_likes=None,
+            filter_min_subscribers=None, filter_max_subscribers=None,
+            filter_min_dislikes=None, filter_max_dislikes=None,
+            filter_min_positive_ratio=None, filter_min_negative_ratio=None,
+            sort_by=None, sort_order="desc",
+        )
+        defaults.update(kwargs)
+        return argparse.Namespace(**defaults)
+
+    @patch("youtube_scraper._apply_sort", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_engagement_filters", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_shorts_filter", side_effect=lambda items, _: items)
+    def test_defaults_run_shorts_filter_and_pass_through(self, mock_s, mock_f, mock_sort):
+        items = [{"id": "a"}]
+        result = youtube_scraper._post_process_items(items, self._args())
+        mock_s.assert_called_once()
+        mock_f.assert_called_once()
+        mock_sort.assert_called_once()
+        self.assertEqual(result, items)
+
+    @patch("youtube_scraper._apply_sort", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_engagement_filters", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_shorts_filter", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._fetch_full_metadata", side_effect=lambda items, _: items)
+    def test_fetch_comments_true_with_comments_calls_fetch(self, mock_fetch, *_):
+        youtube_scraper._post_process_items([{"id": "a"}], self._args(comments=True), fetch_comments=True)
+        mock_fetch.assert_called_once()
+
+    @patch("youtube_scraper._apply_sort", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_engagement_filters", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_shorts_filter", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._fetch_full_metadata", side_effect=lambda items, _: items)
+    def test_fetch_comments_false_never_fetches(self, mock_fetch, *_):
+        youtube_scraper._post_process_items([{"id": "a"}], self._args(comments=True), fetch_comments=False)
+        mock_fetch.assert_not_called()
+
+    @patch("youtube_scraper._apply_sort", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_engagement_filters", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_shorts_filter", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._enrich_dislikes", side_effect=lambda items, **kw: items)
+    def test_dislikes_enabled_calls_enrich(self, mock_enrich, *_):
+        youtube_scraper._post_process_items([{"id": "a"}], self._args(dislikes=True))
+        mock_enrich.assert_called_once()
+
+    @patch("youtube_scraper._apply_sort", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_engagement_filters", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_shorts_filter", side_effect=lambda items, _: items)
+    def test_apply_shorts_false_skips_filter(self, mock_s, *_):
+        youtube_scraper._post_process_items([{"id": "a"}], self._args(), apply_shorts=False)
+        mock_s.assert_not_called()
+
+    @patch("youtube_scraper._apply_sort", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._apply_engagement_filters", side_effect=lambda items, _: items)
+    @patch("youtube_scraper._enrich_dislikes", side_effect=lambda items, **kw: items)
+    @patch("youtube_scraper._apply_shorts_filter", side_effect=lambda items, _: items)
+    def test_shorts_first_false_runs_after_dislikes(self, mock_s, mock_enrich, *_):
+        """shorts_first=False means shorts filter executes after enrichment."""
+        call_order = []
+        mock_s.side_effect = lambda items, _: (call_order.append("shorts"), items)[1]
+        mock_enrich.side_effect = lambda items, **kw: (call_order.append("dislikes"), items)[1]
+
+        youtube_scraper._post_process_items(
+            [{"id": "a"}], self._args(dislikes=True),
+            apply_shorts=True, shorts_first=False,
+        )
+        self.assertEqual(call_order, ["dislikes", "shorts"])
+
+
 if __name__ == "__main__":
     unittest.main()
