@@ -77,35 +77,19 @@ logger = get_logger(__name__)
 # CLI ARGUMENT PARSER
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def build_parser() -> argparse.ArgumentParser:
-    """
-    Build and return the CLI argument parser.
+def _positive_int(value: str) -> int:
+    """argparse type: integer >= 1. Used for --workers."""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"--workers must be an integer, got {value!r}")
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"--workers must be >= 1, got {n}")
+    return n
 
-    We use argparse (Python's built-in CLI library).
-    Each argument has a help string explaining what it does.
-    """
-    parser = argparse.ArgumentParser(
-        prog="youtube_scraper",
-        description=(
-            "YouTube Scraper — extract rich metadata, reports, and optional downloads "
-            "from YouTube videos, playlists, and batch URL files.\n\n"
-            "Default behavior: metadata extraction only (no downloads)."
-        ),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  Single video:     python youtube_scraper.py --url "URL"
-  Save JSON:        python youtube_scraper.py --url "URL" --output out.json
-  Playlist:         python youtube_scraper.py --playlist "URL"
-  Batch:            python youtube_scraper.py --batch urls.txt
-  Subtitles:        python youtube_scraper.py --url "URL" --subtitles
-  Download audio:   python youtube_scraper.py --url "URL" --download-audio
-  Download video:   python youtube_scraper.py --url "URL" --download-video
-  Full report:      python youtube_scraper.py --url "URL" --report --output report.md
-        """,
-    )
 
-    # ── Input source (mutually exclusive) ────────────────────────────────────
+def _add_input_args(parser: argparse.ArgumentParser) -> None:
+    """Add input source arguments (mutually exclusive)."""
     input_group = parser.add_argument_group("Input (choose one)")
     source = input_group.add_mutually_exclusive_group(required=True)
 
@@ -144,7 +128,9 @@ Examples:
         ),
     )
 
-    # ── Search & pipeline options ─────────────────────────────────────────────
+
+def _add_search_pipeline_args(parser: argparse.ArgumentParser) -> None:
+    """Add search, pipeline, and filter arguments."""
     search_group = parser.add_argument_group("Search options")
     search_group.add_argument(
         "--search-limit",
@@ -214,7 +200,9 @@ Examples:
         help="Only include videos uploaded within this many days",
     )
 
-    # ── Output options ────────────────────────────────────────────────────────
+
+def _add_output_args(parser: argparse.ArgumentParser) -> None:
+    """Add output, subtitle, and download arguments."""
     output_group = parser.add_argument_group("Output")
     output_group.add_argument(
         "--output", "-o",
@@ -324,6 +312,9 @@ Examples:
         help=f"Directory for downloads (default: {DEFAULT_OUTPUT_DIR})",
     )
 
+
+def _add_collection_args(parser: argparse.ArgumentParser) -> None:
+    """Add playlist, batch, channel, and shorts/content-type arguments."""
     # ── Playlist options ──────────────────────────────────────────────────────
     playlist_group = parser.add_argument_group("Playlist options")
     playlist_group.add_argument(
@@ -346,15 +337,6 @@ Examples:
     )
 
     # ── Batch options ─────────────────────────────────────────────────────────
-    def _positive_int(value: str) -> int:
-        try:
-            n = int(value)
-        except ValueError:
-            raise argparse.ArgumentTypeError(f"--workers must be an integer, got {value!r}")
-        if n < 1:
-            raise argparse.ArgumentTypeError(f"--workers must be >= 1, got {n}")
-        return n
-
     batch_group = parser.add_argument_group("Batch options")
     batch_group.add_argument(
         "--workers",
@@ -381,25 +363,6 @@ Examples:
         ),
     )
 
-    # ── Comments options ──────────────────────────────────────────────────────
-    comments_group = parser.add_argument_group("Comments")
-    comments_group.add_argument(
-        "--comments",
-        action="store_true",
-        help=(
-            "Fetch video comments (single video or batch). "
-            "Uses yt-dlp's built-in comment extraction — no API key needed."
-        ),
-    )
-    comments_group.add_argument(
-        "--comments-max",
-        metavar="N",
-        dest="comments_max",
-        type=int,
-        default=500,
-        help="Maximum comments to include in output (default: 500). yt-dlp fetches up to ~1000.",
-    )
-
     # ── Shorts / content-type filters ────────────────────────────────────────
     shorts_group = parser.add_argument_group(
         "Content-type filters",
@@ -419,7 +382,30 @@ Examples:
         help="Exclude YouTube Shorts from results.",
     )
 
-    # ── Cache options ─────────────────────────────────────────────────────────
+
+def _add_comments_args(parser: argparse.ArgumentParser) -> None:
+    """Add comments arguments."""
+    comments_group = parser.add_argument_group("Comments")
+    comments_group.add_argument(
+        "--comments",
+        action="store_true",
+        help=(
+            "Fetch video comments (single video or batch). "
+            "Uses yt-dlp's built-in comment extraction — no API key needed."
+        ),
+    )
+    comments_group.add_argument(
+        "--comments-max",
+        metavar="N",
+        dest="comments_max",
+        type=int,
+        default=500,
+        help="Maximum comments to include in output (default: 500). yt-dlp fetches up to ~1000.",
+    )
+
+
+def _add_cache_failure_args(parser: argparse.ArgumentParser) -> None:
+    """Add cache and failure tracking arguments."""
     cache_group = parser.add_argument_group(
         "Cache options",
         "SQLite metadata cache — avoids re-fetching already-seen videos.",
@@ -468,6 +454,9 @@ Examples:
         ),
     )
 
+
+def _add_engagement_sort_args(parser: argparse.ArgumentParser) -> None:
+    """Add engagement, sorting, engagement filters, and global options."""
     # ── Engagement options ────────────────────────────────────────────────────
     engage_group = parser.add_argument_group(
         "Engagement",
@@ -610,6 +599,41 @@ Examples:
         help="Enable verbose/debug output",
     )
 
+
+def build_parser() -> argparse.ArgumentParser:
+    """
+    Build and return the CLI argument parser.
+
+    Each _add_*_args() function owns one logical section.
+    Edit argument definitions there, not here.
+    """
+    parser = argparse.ArgumentParser(
+        prog="youtube_scraper",
+        description=(
+            "YouTube Scraper — extract rich metadata, reports, and optional downloads "
+            "from YouTube videos, playlists, and batch URL files.\n\n"
+            "Default behavior: metadata extraction only (no downloads)."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  Single video:     python youtube_scraper.py --url "URL"
+  Save JSON:        python youtube_scraper.py --url "URL" --output out.json
+  Playlist:         python youtube_scraper.py --playlist "URL"
+  Batch:            python youtube_scraper.py --batch urls.txt
+  Subtitles:        python youtube_scraper.py --url "URL" --subtitles
+  Download audio:   python youtube_scraper.py --url "URL" --download-audio
+  Download video:   python youtube_scraper.py --url "URL" --download-video
+  Full report:      python youtube_scraper.py --url "URL" --report --output report.md
+        """,
+    )
+    _add_input_args(parser)
+    _add_search_pipeline_args(parser)
+    _add_output_args(parser)
+    _add_collection_args(parser)
+    _add_comments_args(parser)
+    _add_cache_failure_args(parser)
+    _add_engagement_sort_args(parser)
     return parser
 
 
