@@ -1611,28 +1611,16 @@ def handle_output(data: dict | list, args: argparse.Namespace, gen: ReportGenera
 # MAIN ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def main() -> None:
+def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     """
-    Parse arguments and route to the appropriate handler.
+    Validate parsed CLI arguments and call parser.error() for any invalid combination.
 
-    The routing priority is:
-      1. Download video/audio  (most explicit — user said "download X")
-      2. Subtitles             (user asked for subtitle info)
-      3. Playlist              (URL is a playlist)
-      4. Batch                 (multiple URLs from file)
-      5. Single video          (default)
+    Groups:
+      1. Mutually exclusive flags
+      2. Dependency rules (X requires Y)
+      3. Numeric range bounds
+      4. Mode-specific flag restrictions
     """
-    # Ensure UTF-8 output on Windows consoles that default to cp1252/cp850.
-    # errors="replace" prevents UnicodeEncodeError for characters the console can't render.
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-
-    parser = build_parser()
-    args = parser.parse_args()
-
-    # ── Fast-fail: incompatible flag combinations ─────────────────────────────
     if getattr(args, "download_video", False) and getattr(args, "download_audio", False):
         parser.error("--download-video and --download-audio are mutually exclusive. Use one at a time.")
     if getattr(args, "subtitles", False) and (getattr(args, "download_video", False) or getattr(args, "download_audio", False)):
@@ -1762,6 +1750,30 @@ def main() -> None:
         for _attr, _flag in _list_only_flags:
             if getattr(args, _attr, None) not in (None, False):
                 parser.error(f"{_flag} is only valid in list-producing modes (--search, --batch, --channel, --playlist, --search-batch).")
+
+
+def main() -> None:
+    """
+    Parse arguments and route to the appropriate handler.
+
+    The routing priority is:
+      1. Download video/audio  (most explicit — user said "download X")
+      2. Subtitles             (user asked for subtitle info)
+      3. Playlist              (URL is a playlist)
+      4. Batch                 (multiple URLs from file)
+      5. Single video          (default)
+    """
+    # Ensure UTF-8 output on Windows consoles that default to cp1252/cp850.
+    # errors="replace" prevents UnicodeEncodeError for characters the console can't render.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    parser = build_parser()
+    args = parser.parse_args()
+
+    _validate_args(parser, args)
 
     # Set up logger verbosity based on --verbose flag
     logger = get_logger("youtube_scraper", verbose=args.verbose)
