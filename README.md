@@ -7,6 +7,8 @@
 
 > Open-source Python CLI to scrape YouTube video metadata, comments, subtitles, channels, and playlists — powered by **yt-dlp**. No YouTube API key required. A fast, scriptable alternative to the YouTube Data API.
 
+![youtube-scraper terminal demo — searching YouTube and getting ranked results](docs/assets/demo.svg)
+
 ## Table of Contents
 
 - [About](#about)
