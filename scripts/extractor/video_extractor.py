@@ -100,9 +100,9 @@ class VideoExtractor:
         except Exception as e:
             raise classify_ytdlp_error(e, url=url) from e
 
-        return self._shape_metadata(sanitized, url)
+        return self._shape_metadata(sanitized, url, comments_max)
 
-    def _shape_metadata(self, raw: dict, url: str) -> dict:
+    def _shape_metadata(self, raw: dict, url: str, comments_max: int = 10000) -> dict:
         """
         Transform raw yt-dlp output into a clean, stable structure.
 
