@@ -1,5 +1,8 @@
-# Core dependency — the YouTube data engine
-yt-dlp>=2024.1.1,<2027
+# Core dependency — the YouTube data engine.
+# [default] pulls the companion packages (yt-dlp-ejs for the required JS runtime
+# support, etc.). No upper pin: YouTube breaks old extractors constantly, so
+# refresh with:  pip install -U -r requirements.txt
+yt-dlp[default]>=2026.7.4
 
 # Rich terminal output (colored tables, progress bars, panels)
 rich>=13.0.0
