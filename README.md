@@ -7,6 +7,31 @@
 
 > Open-source Python CLI to scrape YouTube video metadata, comments, subtitles, channels, and playlists — powered by **yt-dlp**. No YouTube API key required. A fast, scriptable alternative to the YouTube Data API.
 
+## Table of Contents
+
+- [About](#about)
+- [Quickstart](#quickstart)
+- [Why Not the YouTube Data API?](#why-not-the-youtube-data-api)
+- [What This Does](#what-this-does)
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Output Example (JSON)](#output-example-json)
+- [CLI Reference](#cli-reference)
+- [Project Architecture](#project-architecture)
+- [Error Handling](#error-handling)
+- [Running Tests](#running-tests)
+- [Known Limitations](#known-limitations)
+- [Troubleshooting](#troubleshooting)
+- [Future Roadmap](#future-roadmap)
+- [Security & Ethics](#security--ethics)
+
+## About
+
+**youtube-scraper** is a YouTube data extraction tool for researchers, data analysts, and developers who need structured YouTube data without the quota limits, API keys, or OAuth setup of the official YouTube Data API v3. One command scrapes video metadata (views, likes, duration, tags, chapters), comments with VADER sentiment analysis, estimated dislikes, subtitles/transcripts, entire channels, and playlists — output as JSON, CSV, or Markdown. Built on [yt-dlp](https://github.com/yt-dlp/yt-dlp), tested with 113 unit tests, and shipped with Docker support.
+
+Common use cases: content research, competitor channel analysis, comment sentiment mining, dataset building for ML/NLP, SEO keyword research from video tags, and feeding video sources into NotebookLM.
+
 ## Quickstart
 
 ```bash
@@ -30,6 +55,23 @@ docker compose run --rm scraper --search "your topic"
 ---
 
 A feature-complete YouTube metadata extractor built with Python and **yt-dlp**. Extracts rich structured data from videos, playlists, channels, and batches of URLs. Downloading is **never** the default behavior.
+
+---
+
+## Why Not the YouTube Data API?
+
+| | YouTube Data API v3 | youtube-scraper |
+|---|---|---|
+| **API key / OAuth** | Required | Not needed |
+| **Daily quota** | 10,000 units (a search costs 100) | None — rate-limited only by YouTube itself |
+| **Comments** | Extra quota per page | Included (`--comments`) |
+| **Dislike counts** | Removed in 2021 | Estimated via Return YouTube Dislike (`--dislikes`) |
+| **Sentiment analysis** | Not available | Built in — VADER (`--sentiment`) |
+| **Subtitles / transcripts** | Captions API needs OAuth + video ownership | Any public video (`--subtitles`, `--transcript`) |
+| **Output** | JSON only | JSON, CSV, Markdown report, URLs-only |
+| **Setup** | Cloud Console project, credentials | `pip install -r requirements.txt` |
+
+Use the official API when you need guaranteed stability and ToS-blessed commercial integration. Use this when you need rich public data, fast, for research and analysis.
 
 ---
 
@@ -121,12 +163,30 @@ pip install -r requirements.txt
 ```
 
 This installs:
-- `yt-dlp` — the core YouTube data engine
+- `yt-dlp[default]` — the core YouTube data engine (incl. `yt-dlp-ejs` for JS runtime support)
 - `rich` — colored terminal output with tables
 - `tqdm` — progress bars for batch operations
 - `vaderSentiment` — lexicon-based comment sentiment analysis
 
-#### Step 3: Install ffmpeg (optional, required for downloads)
+> **Keep yt-dlp current.** YouTube changes its internals constantly and old yt-dlp
+> versions stop working. When extraction starts failing, run:
+> `pip install -U -r requirements.txt`
+
+#### Step 3: Install a JavaScript runtime (recommended)
+
+Modern yt-dlp needs a JS runtime ([deno](https://deno.com) by default) to solve
+YouTube's JavaScript challenges. Without one you'll see deprecation warnings and
+may get missing formats.
+
+```bash
+# Windows
+winget install DenoLand.Deno
+
+# macOS / Linux
+curl -fsSL https://deno.land/install.sh | sh
+```
+
+#### Step 4: Install ffmpeg (optional, required for downloads)
 
 ffmpeg is needed for:
 - Converting audio to MP3 (`--download-audio`)
@@ -142,7 +202,7 @@ brew install ffmpeg
 # Windows — download from https://ffmpeg.org/download.html, add to PATH
 ```
 
-#### Step 4: Verify
+#### Step 5: Verify
 
 ```bash
 python3 -c "import yt_dlp; print('yt-dlp version:', yt_dlp.version.__version__)"
@@ -727,11 +787,12 @@ python -m pytest scripts/tests/test_formatters.py -v
 python -m pytest scripts/tests/test_cli_behaviors.py -v
 ```
 
-Tests cover:
+The suite (113 tests) covers:
 - URL validation (video, playlist, channel, invalid URLs)
 - Helper functions (formatting, safe access)
 - Formatters (JSON, CSV, Markdown output)
 - CLI internal helpers (`_result_items`, `_run_ordered`, `_post_process_items`)
+- Video metadata shaping (`test_video_extractor.py`)
 
 No network calls are made in tests — all use mock data.
 
@@ -804,8 +865,6 @@ The field `"dislike_count_estimated": true` in the output marks this.
 
 ---
 
----
-
 ## Troubleshooting
 
 ### "Module not found: yt_dlp"
@@ -833,9 +892,12 @@ Reduce `--workers` to 1 for sequential processing, or add delays between runs.
 
 ### yt-dlp is outdated (YouTube changes often)
 ```bash
-pip install -U yt-dlp
+pip install -U -r requirements.txt
 ```
-YouTube's internal APIs change frequently. Keeping yt-dlp up to date is important.
+YouTube's internal APIs change frequently. Keeping yt-dlp up to date is important — stale versions are the #1 cause of sudden extraction failures.
+
+### "No supported JavaScript runtime could be found"
+Install deno (see Installation Step 3). yt-dlp uses it to solve YouTube's JS challenges; without it some formats go missing and extraction is deprecated.
 
 ### Dislike counts show `null`
 The Return YouTube Dislike API may be unavailable or the video may be too new. Failures are silent — the rest of the metadata is unaffected.
