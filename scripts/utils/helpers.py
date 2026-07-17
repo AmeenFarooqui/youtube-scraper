@@ -11,9 +11,8 @@ into human-readable strings.
 they don't log, write files, or make network calls.
 """
 
-import re
 import math
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 
@@ -136,23 +135,6 @@ def format_date(date_str: str | None) -> str:
         return str(date_str)
 
 
-def format_timestamp(timestamp: int | float | None) -> str:
-    """
-    Convert a Unix timestamp to a readable UTC datetime string.
-
-    Examples:
-        1702656000 → "2023-12-15 20:00:00 UTC"
-        None       → "Unknown"
-    """
-    if timestamp is None:
-        return "Unknown"
-    try:
-        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
-        return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
-    except (OSError, OverflowError, ValueError):
-        return "Unknown"
-
-
 # ── Safe data access ──────────────────────────────────────────────────────────
 
 def safe_get(data: dict, *keys: str, default: Any = None) -> Any:
@@ -183,27 +165,6 @@ def safe_get(data: dict, *keys: str, default: Any = None) -> Any:
         except (KeyError, IndexError, TypeError):
             return default
     return current if current is not None else default
-
-
-# ── Filename sanitization ─────────────────────────────────────────────────────
-
-def safe_filename(name: str, max_length: int = 200) -> str:
-    """
-    Convert an arbitrary string into a safe filename.
-
-    Removes or replaces characters that are illegal in filenames on
-    Windows, Mac, and Linux. Truncates to max_length to avoid OS limits.
-
-    Examples:
-        "My Video: Part 1!" → "My_Video_Part_1"
-        "C:/bad/path"       → "C__bad_path"
-    """
-    # Replace characters illegal in filenames
-    safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name)
-    # Collapse multiple underscores/spaces
-    safe = re.sub(r"[\s_]+", "_", safe).strip("_. ")
-    # Truncate
-    return safe[:max_length] or "untitled"
 
 
 # ── List/dict helpers ─────────────────────────────────────────────────────────

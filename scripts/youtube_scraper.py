@@ -51,7 +51,6 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 # ── Our modules ────────────────────────────────────────────────────────────────
 from utils import (
     get_logger,
-    is_valid_youtube_url,
     detect_url_type,
     validate_batch_file,
     extract_video_id,

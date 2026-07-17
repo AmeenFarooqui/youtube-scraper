@@ -16,7 +16,6 @@ from utils.validators import (
     detect_url_type,
     is_valid_youtube_url,
     extract_video_id,
-    extract_playlist_id,
     validate_batch_file,
 )
 
@@ -122,25 +121,6 @@ class TestExtractVideoId(unittest.TestCase):
 
     def test_invalid(self):
         self.assertIsNone(extract_video_id("https://google.com"))
-
-
-class TestExtractPlaylistId(unittest.TestCase):
-    """Tests for extract_playlist_id()"""
-
-    def test_playlist_url(self):
-        pl_id = extract_playlist_id(
-            "https://www.youtube.com/playlist?list=PLbpi6ZahtOH6Ar_3GPy3workVBHSmknAZB"
-        )
-        self.assertEqual(pl_id, "PLbpi6ZahtOH6Ar_3GPy3workVBHSmknAZB")
-
-    def test_watch_with_list(self):
-        pl_id = extract_playlist_id(
-            "https://www.youtube.com/watch?v=abc123&list=PLbpi6ZahtOH6Ar_3GPy3workVBHSmknAZB"
-        )
-        self.assertEqual(pl_id, "PLbpi6ZahtOH6Ar_3GPy3workVBHSmknAZB")
-
-    def test_no_playlist(self):
-        self.assertIsNone(extract_playlist_id("https://youtube.com/watch?v=dQw4w9WgXcQ"))
 
 
 if __name__ == "__main__":

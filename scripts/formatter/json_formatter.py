@@ -30,7 +30,7 @@ class JsonFormatter:
         """
         Args:
             indent:      JSON indentation spaces (2 = compact-ish, 4 = very readable)
-            exclude_raw: If True, strip the large 'formats_raw' field to keep
+            exclude_raw: If True, strip the large 'thumbnails_all' field to keep
                          output focused on the summary. Set False to keep everything.
         """
         self.indent = indent
@@ -68,9 +68,9 @@ class JsonFormatter:
         """
         Optionally remove large/redundant fields before serialization.
 
-        'formats_raw' contains a huge list of all available format objects
-        from yt-dlp. The summary in 'formats_summary' covers the key info,
-        so we drop 'formats_raw' by default to keep output manageable.
+        'thumbnails_all' contains every thumbnail variant from yt-dlp.
+        The best one is already in 'thumbnail', so we drop the full list
+        by default to keep output manageable.
         """
         if not self.exclude_raw:
             return data
@@ -84,7 +84,6 @@ class JsonFormatter:
     def _clean_dict(self, d: dict) -> dict:
         """Remove verbose raw fields from a metadata dict, recursing into nested structures."""
         FIELDS_TO_DROP = {
-            "formats_raw",
             "thumbnails_all",
         }
 

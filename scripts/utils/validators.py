@@ -101,18 +101,6 @@ def extract_video_id(url: str) -> str | None:
     return None
 
 
-def extract_playlist_id(url: str) -> str | None:
-    """Extract the playlist ID from a YouTube playlist URL."""
-    match = _PLAYLIST_PATTERN.search(url)
-    if match:
-        return match.group(1)
-    # Also handle /watch?v=...&list=...
-    list_match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
-    if list_match:
-        return list_match.group(1)
-    return None
-
-
 def validate_batch_file(file_path: str) -> tuple[bool, str, list[str]]:
     """
     Validate a batch file containing YouTube URLs (one per line).

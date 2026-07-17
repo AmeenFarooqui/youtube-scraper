@@ -114,20 +114,3 @@ def parse_subtitle_file(path: str | Path) -> str:
         return _parse_ass(text)
     else:
         return parse_srt(text)
-
-
-def parse_subtitle_content(content: str, fmt: str = "srt") -> str:
-    """
-    Parse subtitle content from a string (not a file).
-
-    Args:
-        content: Raw subtitle text
-        fmt:     Format hint — "srt", "vtt", or "ass"
-    """
-    fmt = fmt.lower()
-    if fmt in ("vtt", "webvtt"):
-        return parse_vtt(content)
-    elif fmt == "ass":
-        return _parse_ass(content)
-    else:
-        return parse_srt(content)

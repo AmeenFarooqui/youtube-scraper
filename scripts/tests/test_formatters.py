@@ -69,7 +69,7 @@ def make_video_metadata(**overrides) -> dict:
                 "filesize_formatted": "N/A",
             },
         },
-        "formats_raw": [],  # Excluded by default in JsonFormatter
+        "thumbnails_all": [],  # Excluded by default in JsonFormatter
         "subtitles_summary": {
             "has_manual_subtitles": True,
             "has_auto_captions": True,
@@ -108,14 +108,14 @@ class TestJsonFormatter(unittest.TestCase):
         output = json.loads(self.fmt.format(self.data))
         self.assertEqual(output["title"], self.data["title"])
 
-    def test_formats_raw_excluded_by_default(self):
+    def test_thumbnails_all_excluded_by_default(self):
         output = json.loads(self.fmt.format(self.data))
-        self.assertNotIn("formats_raw", output)
+        self.assertNotIn("thumbnails_all", output)
 
-    def test_formats_raw_included_when_requested(self):
+    def test_thumbnails_all_included_when_requested(self):
         fmt = JsonFormatter(exclude_raw=False)
         output = json.loads(fmt.format(self.data))
-        self.assertIn("formats_raw", output)
+        self.assertIn("thumbnails_all", output)
 
     def test_list_input(self):
         output = self.fmt.format([self.data, self.data])

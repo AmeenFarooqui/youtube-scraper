@@ -57,13 +57,6 @@ class MarkdownFormatter:
         fmt.save(md, "report.md")
     """
 
-    def __init__(self, include_raw_json_block: bool = False):
-        """
-        Args:
-            include_raw_json_block: If True, append a collapsed JSON block at the end.
-        """
-        self.include_raw_json = include_raw_json_block
-
     # ── Public API ────────────────────────────────────────────────────────────
 
     def format_video(self, data: dict) -> str:

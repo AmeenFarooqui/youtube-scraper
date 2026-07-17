@@ -19,7 +19,6 @@ from utils.helpers import (
     format_filesize,
     format_date,
     safe_get,
-    safe_filename,
     truncate,
 )
 
@@ -122,27 +121,6 @@ class TestSafeGet(unittest.TestCase):
     def test_list_out_of_bounds(self):
         d = {"items": ["x"]}
         self.assertIsNone(safe_get(d, "items", 99))
-
-
-class TestSafeFilename(unittest.TestCase):
-
-    def test_normal_string(self):
-        result = safe_filename("My Video Title")
-        self.assertIn("My", result)
-        self.assertNotIn(" ", result)
-
-    def test_removes_illegal_chars(self):
-        result = safe_filename('Video: "Part 1" <test>')
-        for illegal in [':', '"', '<', '>']:
-            self.assertNotIn(illegal, result)
-
-    def test_max_length(self):
-        long_name = "a" * 500
-        result = safe_filename(long_name, max_length=100)
-        self.assertLessEqual(len(result), 100)
-
-    def test_empty_becomes_untitled(self):
-        self.assertEqual(safe_filename(""), "untitled")
 
 
 class TestTruncate(unittest.TestCase):

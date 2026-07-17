@@ -7,7 +7,6 @@ from .helpers import (
     format_number,
     format_date,
     safe_get,
-    safe_filename,
     seconds_to_hms,
     is_youtube_short,
 )
@@ -37,7 +36,6 @@ __all__ = [
     "format_number",
     "format_date",
     "safe_get",
-    "safe_filename",
     "seconds_to_hms",
     "is_youtube_short",
     "ScraperError",

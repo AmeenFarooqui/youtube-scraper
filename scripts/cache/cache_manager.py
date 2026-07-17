@@ -126,13 +126,6 @@ class CacheManager:
             )
             conn.commit()
 
-    def invalidate(self, video_id: str) -> None:
-        """Force-expire a single cached entry."""
-        with self._lock:
-            conn = self._connect()
-            conn.execute("DELETE FROM videos WHERE id = ?", (video_id,))
-            conn.commit()
-
     def clear(self) -> int:
         """Remove all cached entries. Returns the count removed."""
         with self._lock:
@@ -140,25 +133,6 @@ class CacheManager:
             cursor = conn.execute("DELETE FROM videos")
             conn.commit()
             return cursor.rowcount
-
-    def stats(self) -> dict:
-        """Return a summary of cache state."""
-        with self._lock:
-            conn = self._connect()
-            total   = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0]
-            expired = conn.execute(
-                "SELECT COUNT(*) FROM videos WHERE fetched_at < ?",
-                (time.time() - self.ttl,),
-            ).fetchone()[0]
-        size_bytes = self._db_path.stat().st_size if self._db_path.exists() else 0
-        return {
-            "db_path":        str(self._db_path),
-            "total_entries":  total,
-            "fresh_entries":  total - expired,
-            "expired_entries": expired,
-            "ttl_hours":      round(self.ttl / 3600, 1),
-            "db_size_kb":     round(size_bytes / 1024, 1),
-        }
 
     def close(self) -> None:
         """Close the database connection."""

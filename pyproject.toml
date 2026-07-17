@@ -5,7 +5,7 @@ build-backend = "setuptools.backends.legacy:build"
 [project]
 name = "youtube-scraper"
 version = "1.0.0"
-description = "Python CLI to scrape YouTube video metadata, comments, sentiment, subtitles, channels, and playlists — powered by yt-dlp. No API key required."
+description = "Python CLI to scrape YouTube video metadata, comments, sentiment, subtitles, channels, and playlists. Powered by yt-dlp, no API key required."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
